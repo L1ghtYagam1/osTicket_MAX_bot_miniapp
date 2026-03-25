@@ -168,7 +168,29 @@ SMTP_USE_TLS=true
 
 ## Установка через Docker
 
-### 1. Установить Git
+### 1. Установить Docker и Docker Compose
+
+Linux Debian/Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install -y docker.io docker-compose-plugin
+sudo systemctl enable --now docker
+```
+
+Проверка:
+
+```bash
+docker --version
+docker compose version
+```
+
+Windows:
+
+- установите [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- после установки убедитесь, что команды `docker --version` и `docker compose version` работают в новом терминале
+
+### 2. Установить Git
 
 Если `git` ещё не установлен:
 
@@ -184,19 +206,33 @@ Windows:
 - установите [Git for Windows](https://git-scm.com/download/win)
 - после установки откройте новый терминал
 
-### 2. Скачать репозиторий
+### 3. Скачать репозиторий
 
 ```bash
 git clone https://github.com/L1ghtYagam1/osTicket_MAX_bot_miniapp.git
 cd osTicket_MAX_bot_miniapp
 ```
 
-### 3. Подготовить `.env`
+### 4. Подготовить и отредактировать `.env`
 
 Скопируйте пример:
 
 ```bash
 cp .env.example .env
+```
+
+Откройте файл `.env` в редакторе и сохраните свои значения.
+
+Linux:
+
+```bash
+nano .env
+```
+
+Windows PowerShell:
+
+```powershell
+notepad .env
 ```
 
 Заполните минимум такие переменные:
@@ -211,20 +247,20 @@ ADMIN_MAX_IDS=
 
 Если проект запускается локально без отдельного reverse proxy, значения по умолчанию для `BACKEND_API_URL` и `DATABASE_URL` можно не менять.
 
-### 4. Запустить проект
+### 5. Запустить проект
 
 ```bash
 docker compose up -d --build
 ```
 
-### 5. Проверить контейнеры
+### 6. Проверить контейнеры
 
 ```bash
 docker compose ps
 docker compose logs -f
 ```
 
-### 6. Открыть web UI
+### 7. Открыть web UI
 
 После запуска web UI будет доступен по адресу:
 
@@ -238,7 +274,7 @@ http://localhost:8000/app
 http://YOUR_SERVER_IP:8000/app
 ```
 
-### 7. Остановить проект
+### 8. Остановить проект
 
 ```bash
 docker compose down
