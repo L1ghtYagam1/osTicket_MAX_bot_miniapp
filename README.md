@@ -168,14 +168,30 @@ SMTP_USE_TLS=true
 
 ## Установка через Docker
 
-### 1. Скачать репозиторий
+### 1. Установить Git
+
+Если `git` ещё не установлен:
+
+Linux Debian/Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install -y git
+```
+
+Windows:
+
+- установите [Git for Windows](https://git-scm.com/download/win)
+- после установки откройте новый терминал
+
+### 2. Скачать репозиторий
 
 ```bash
 git clone https://github.com/L1ghtYagam1/osTicket_MAX_bot_miniapp.git
 cd osTicket_MAX_bot_miniapp
 ```
 
-### 2. Подготовить `.env`
+### 3. Подготовить `.env`
 
 Скопируйте пример:
 
@@ -195,20 +211,20 @@ ADMIN_MAX_IDS=
 
 Если проект запускается локально без отдельного reverse proxy, значения по умолчанию для `BACKEND_API_URL` и `DATABASE_URL` можно не менять.
 
-### 3. Запустить проект
+### 4. Запустить проект
 
 ```bash
 docker compose up -d --build
 ```
 
-### 4. Проверить контейнеры
+### 5. Проверить контейнеры
 
 ```bash
 docker compose ps
 docker compose logs -f
 ```
 
-### 5. Открыть web UI
+### 6. Открыть web UI
 
 После запуска web UI будет доступен по адресу:
 
@@ -222,7 +238,7 @@ http://localhost:8000/app
 http://YOUR_SERVER_IP:8000/app
 ```
 
-### 6. Остановить проект
+### 7. Остановить проект
 
 ```bash
 docker compose down
