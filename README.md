@@ -166,23 +166,49 @@ SMTP_SENDER=
 SMTP_USE_TLS=true
 ```
 
-## Быстрый запуск через Docker
+## Установка через Docker
+
+### 1. Скачать репозиторий
+
+```bash
+git clone https://github.com/L1ghtYagam1/osTicket_MAX_bot_miniapp.git
+cd osTicket_MAX_bot_miniapp
+```
+
+### 2. Подготовить `.env`
+
+Скопируйте пример:
+
+```bash
+cp .env.example .env
+```
+
+Заполните минимум такие переменные:
+
+```env
+MAX_BOT_TOKEN=
+OSTICKET_API_URL=https://your-osticket.example/api/tickets.json
+OSTICKET_API_KEY=
+OSTICKET_STATUS_API_URL=
+ADMIN_MAX_IDS=
+```
+
+Если проект запускается локально без отдельного reverse proxy, значения по умолчанию для `BACKEND_API_URL` и `DATABASE_URL` можно не менять.
+
+### 3. Запустить проект
 
 ```bash
 docker compose up -d --build
 ```
 
-Логи:
+### 4. Проверить контейнеры
 
 ```bash
+docker compose ps
 docker compose logs -f
 ```
 
-Остановка:
-
-```bash
-docker compose down
-```
+### 5. Открыть web UI
 
 После запуска web UI будет доступен по адресу:
 
@@ -190,180 +216,16 @@ docker compose down
 http://localhost:8000/app
 ```
 
-## Локальный запуск без Docker
-
-### 1. Создать виртуальное окружение
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 2. Установить зависимости
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Запустить backend
-
-```bash
-uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-### 4. Запустить бота
-
-В отдельном окне:
-
-```bash
-python3 main.py
-```
-
-## Установка на Linux
-
-Ниже пример для Debian/Ubuntu.
-
-### 1. Установить системные пакеты
-
-```bash
-sudo apt update
-sudo apt install -y python3 python3-venv python3-pip git
-```
-
-### 2. Клонировать репозиторий
-
-```bash
-git clone https://github.com/L1ghtYagam1/osTicket_MAX_bot_miniapp.git
-cd osTicket_MAX_bot_miniapp
-```
-
-### 3. Создать виртуальное окружение
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 4. Установить зависимости
-
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### 5. Подготовить `.env`
-
-```bash
-cp .env.example .env
-nano .env
-```
-
-Минимально заполните:
-
-```env
-MAX_BOT_TOKEN=
-BACKEND_API_URL=http://127.0.0.1:8000/api/v1
-
-OSTICKET_API_URL=https://your-osticket.example/api/tickets.json
-OSTICKET_API_KEY=
-OSTICKET_STATUS_API_URL=
-
-DATABASE_URL=sqlite:///./data/app.db
-ADMIN_MAX_IDS=
-```
-
-### 6. Запустить backend
-
-```bash
-source .venv/bin/activate
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
-```
-
-### 7. Запустить бота
-
-В отдельной сессии:
-
-```bash
-cd /path/to/osTicket_MAX_bot_miniapp
-source .venv/bin/activate
-python3 main.py
-```
-
-### 8. Проверить backend
-
-```bash
-curl http://127.0.0.1:8000/api/v1/health
-```
-
-Ожидаемый ответ:
-
-```json
-{"status":"ok"}
-```
-
-### 9. Открыть web UI
-
-Если сервер доступен по IP или домену:
+Если проект развернут на сервере, используйте:
 
 ```text
 http://YOUR_SERVER_IP:8000/app
 ```
 
-## Запуск через systemd на Linux
-
-Если хотите, чтобы backend и бот стартовали автоматически после перезагрузки, можно сделать два systemd unit.
-
-### Пример unit для backend
-
-```ini
-[Unit]
-Description=MAX Support Backend
-After=network.target
-
-[Service]
-User=www-data
-WorkingDirectory=/opt/osTicket_MAX_bot_miniapp
-EnvironmentFile=/opt/osTicket_MAX_bot_miniapp/.env
-ExecStart=/opt/osTicket_MAX_bot_miniapp/.venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### Пример unit для бота
-
-```ini
-[Unit]
-Description=MAX Support Bot
-After=network.target
-
-[Service]
-User=www-data
-WorkingDirectory=/opt/osTicket_MAX_bot_miniapp
-EnvironmentFile=/opt/osTicket_MAX_bot_miniapp/.env
-ExecStart=/opt/osTicket_MAX_bot_miniapp/.venv/bin/python main.py
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-После сохранения unit-файлов:
+### 6. Остановить проект
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable max-support-backend
-sudo systemctl enable max-support-bot
-sudo systemctl start max-support-backend
-sudo systemctl start max-support-bot
-```
-
-Проверка:
-
-```bash
-sudo systemctl status max-support-backend
-sudo systemctl status max-support-bot
+docker compose down
 ```
 
 ## Проверка после запуска
