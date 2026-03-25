@@ -174,7 +174,7 @@ Linux Debian/Ubuntu:
 
 ```bash
 sudo apt update
-sudo apt install -y docker.io docker-compose-plugin
+sudo apt install -y docker.io docker-compose || sudo apt install -y docker.io docker-compose-plugin
 sudo systemctl enable --now docker
 ```
 
@@ -182,7 +182,7 @@ sudo systemctl enable --now docker
 
 ```bash
 docker --version
-docker compose version
+docker-compose --version || docker compose version
 ```
 
 Windows:
@@ -215,17 +215,10 @@ cd osTicket_MAX_bot_miniapp
 
 ### 4. Подготовить и отредактировать `.env`
 
-Скопируйте пример:
+Скопируйте пример и сразу откройте файл для редактирования:
 
 ```bash
 cp .env.example .env
-```
-
-Откройте файл `.env` в редакторе и сохраните свои значения.
-
-Linux:
-
-```bash
 nano .env
 ```
 
@@ -250,14 +243,14 @@ ADMIN_MAX_IDS=
 ### 5. Запустить проект
 
 ```bash
-docker compose up -d --build
+docker-compose up -d --build || docker compose up -d --build
 ```
 
 ### 6. Проверить контейнеры
 
 ```bash
-docker compose ps
-docker compose logs -f
+docker-compose ps || docker compose ps
+docker-compose logs -f || docker compose logs -f
 ```
 
 ### 7. Открыть web UI
@@ -277,7 +270,7 @@ http://YOUR_SERVER_IP:8000/app
 ### 8. Остановить проект
 
 ```bash
-docker compose down
+docker-compose down || docker compose down
 ```
 
 ## Проверка после запуска
