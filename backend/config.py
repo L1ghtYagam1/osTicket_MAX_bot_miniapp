@@ -1,0 +1,55 @@
+from functools import lru_cache
+from typing import List
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    app_name: str = "MAX Support Backend"
+    app_env: str = "development"
+    app_host: str = "0.0.0.0"
+    app_port: int = 8000
+
+    database_url: str = "sqlite:///./data/app.db"
+    cors_origins_raw: str = "*"
+
+    osticket_api_url: str = ""
+    osticket_api_key: str = ""
+    osticket_request_timeout: int = 20
+    osticket_status_api_url: str = ""
+    email_verification_ttl_minutes: int = 10
+
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_sender: str = ""
+    smtp_use_tls: bool = True
+
+    admin_max_ids_raw: str = Field(default="", alias="ADMIN_MAX_IDS")
+
+    @property
+    def cors_origins(self) -> List[str]:
+        raw = self.cors_origins_raw.strip()
+        if not raw:
+            return ["*"]
+        return [item.strip() for item in raw.split(",") if item.strip()]
+
+    @property
+    def admin_max_ids(self) -> List[str]:
+        raw = self.admin_max_ids_raw.strip()
+        if not raw:
+            return []
+        return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

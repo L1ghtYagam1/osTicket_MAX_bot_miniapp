@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MAX Support</title>
+  <link rel="stylesheet" href="/app/assets/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">MS</div>
+        <div>
+          <div class="brand-title">MAX Support</div>
+          <div class="brand-subtitle">osTicket 1.18.1</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Сессия</h3>
+        <label>MAX User ID</label>
+        <input id="maxUserId" placeholder="Например 455587587">
+        <label>Имя</label>
+        <input id="fullName" placeholder="ФИО">
+        <button id="saveSessionBtn" class="primary">Сохранить сессию</button>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-btn active" data-tab="bind">Привязка почты</button>
+        <button class="nav-btn" data-tab="create">Новая заявка</button>
+        <button class="nav-btn" data-tab="tickets">Мои заявки</button>
+        <button class="nav-btn" data-tab="admin">Админка</button>
+      </nav>
+    </aside>
+
+    <main class="content">
+      <section class="panel active" id="tab-bind">
+        <div class="panel-head">
+          <h1>Подтверждение рабочей почты</h1>
+          <p>Сначала отправьте код на рабочую почту, затем подтвердите его.</p>
+        </div>
+        <div class="card">
+          <label>Рабочая почта</label>
+          <input id="emailInput" placeholder="name@company.ru">
+          <button id="requestCodeBtn" class="primary">Отправить код</button>
+          <label>Код из письма</label>
+          <input id="emailCodeInput" placeholder="123456">
+          <button id="bindEmailBtn" class="primary">Подтвердить почту</button>
+          <div id="bindResult" class="result"></div>
+        </div>
+      </section>
+
+      <section class="panel" id="tab-create">
+        <div class="panel-head">
+          <h1>Новая заявка</h1>
+          <p>Создание заявки через backend и osTicket.</p>
+        </div>
+        <div class="grid two">
+          <div class="card">
+            <label>Отель</label>
+            <select id="hotelSelect"></select>
+            <label>Категория</label>
+            <select id="categorySelect"></select>
+            <label>Тема</label>
+            <select id="topicSelect"></select>
+            <label>Описание</label>
+            <textarea id="descriptionInput" rows="8" placeholder="Опишите проблему"></textarea>
+            <button id="createTicketBtn" class="primary">Отправить заявку</button>
+            <div id="createResult" class="result"></div>
+          </div>
+          <div class="card">
+            <h3>Подсказка</h3>
+            <p>Категории и темы берутся из backend, поэтому админ может менять их без правки кода.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="tab-tickets">
+        <div class="panel-head">
+          <h1>Мои заявки</h1>
+          <p>Актуальный статус каждой заявки backend читает из тикета.</p>
+        </div>
+        <div class="card">
+          <button id="refreshTicketsBtn" class="primary">Обновить список</button>
+          <div id="ticketsList" class="list"></div>
+        </div>
+      </section>
+
+      <section class="panel" id="tab-admin">
+        <div class="panel-head">
+          <h1>Админ-панель</h1>
+          <p>Редактирование отелей, категорий и тем через backend API.</p>
+        </div>
+        <div class="grid three">
+          <div class="card">
+            <div class="card-toolbar">
+              <h3>Пользователи</h3>
+              <button id="refreshUsersBtn">Обновить</button>
+            </div>
+            <div id="usersAdminList" class="list"></div>
+          </div>
+          <div class="card">
+            <div class="card-toolbar">
+              <h3>Отели</h3>
+              <button id="addHotelBtn">Добавить</button>
+            </div>
+            <div id="hotelsAdminList" class="list"></div>
+          </div>
+          <div class="card">
+            <div class="card-toolbar">
+              <h3>Категории</h3>
+              <button id="addCategoryBtn">Добавить</button>
+            </div>
+            <div id="categoriesAdminList" class="list"></div>
+          </div>
+          <div class="card">
+            <div class="card-toolbar">
+              <h3>Темы</h3>
+              <button id="addTopicBtn">Добавить</button>
+            </div>
+            <div id="topicsAdminList" class="list"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app/assets/app.js"></script>
+</body>
+</html>

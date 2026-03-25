@@ -1,0 +1,34 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: max-support-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
+      - ./webapp:/app/webapp
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    container_name: max-support-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
