@@ -118,6 +118,7 @@ PUBLIC_DOMAIN=maxapp.example.com
 PUBLIC_WEBAPP_URL=https://maxapp.example.com/app
 PUBLIC_API_BASE_URL=https://maxapp.example.com/api/v1
 MAX_WEBAPP_AUTH_MAX_AGE_SECONDS=86400
+MAX_SESSION_SECRET=change-me-for-production
 
 
 # =========================
@@ -244,6 +245,7 @@ ADMIN_MAX_IDS=
 ```
 
 `MAX_BOT_TOKEN` используется не только ботом, но и backend для серверной валидации запуска mini app из MAX.
+`MAX_SESSION_SECRET` используется backend для подписи web session token. В production задайте своё длинное секретное значение.
 
 Если проект запускается локально без отдельного reverse proxy, значения по умолчанию для `BACKEND_API_URL` и `DATABASE_URL` можно не менять.
 
@@ -317,6 +319,7 @@ OSTICKET_STATUS_API_URL=https://osticket.example.com/api/tickets/{ticket_id}.jso
 - frontend работает через относительные `/api/v1/...`, поэтому домен `app` и `api` может быть один и тот же
 - при открытии из MAX web app пытается подхватить пользователя из `window.WebApp`
 - backend умеет валидировать `initData` mini app на стороне сервера через `MAX_BOT_TOKEN`
+- после валидации backend выдаёт подписанный session token, и admin/web запросы идут уже через `Authorization: Bearer ...`
 
 Что нужно сделать на стороне MAX:
 

@@ -1,6 +1,7 @@
 const state = {
   maxUserId: localStorage.getItem("max_user_id") || "",
   fullName: localStorage.getItem("full_name") || "",
+  accessToken: localStorage.getItem("access_token") || "",
   catalog: null,
   webAppReady: false,
 };
@@ -10,6 +11,7 @@ const api = {
     const response = await fetch(path, {
       headers: {
         "Content-Type": "application/json",
+        ...(state.accessToken ? { Authorization: `Bearer ${state.accessToken}` } : {}),
         ...(options.headers || {}),
       },
       ...options,
@@ -51,6 +53,10 @@ const api = {
     });
   },
 
+  getMe() {
+    return this.request("/api/v1/auth/me");
+  },
+
   getCatalog() {
     return this.request("/api/v1/catalog");
   },
@@ -67,15 +73,12 @@ const api = {
   },
 
   adminListHotels() {
-    return this.request("/api/v1/admin/hotels", {
-      headers: { "X-Max-User-Id": state.maxUserId },
-    });
+    return this.request("/api/v1/admin/hotels");
   },
 
   adminCreateHotel(name) {
     return this.request("/api/v1/admin/hotels", {
       method: "POST",
-      headers: { "X-Max-User-Id": state.maxUserId },
       body: JSON.stringify({ name }),
     });
   },
@@ -83,21 +86,17 @@ const api = {
   adminUpdateHotel(id, payload) {
     return this.request(`/api/v1/admin/hotels/${id}`, {
       method: "PUT",
-      headers: { "X-Max-User-Id": state.maxUserId },
       body: JSON.stringify(payload),
     });
   },
 
   adminListCategories() {
-    return this.request("/api/v1/admin/categories", {
-      headers: { "X-Max-User-Id": state.maxUserId },
-    });
+    return this.request("/api/v1/admin/categories");
   },
 
   adminCreateCategory(payload) {
     return this.request("/api/v1/admin/categories", {
       method: "POST",
-      headers: { "X-Max-User-Id": state.maxUserId },
       body: JSON.stringify(payload),
     });
   },
@@ -105,21 +104,17 @@ const api = {
   adminUpdateCategory(id, payload) {
     return this.request(`/api/v1/admin/categories/${id}`, {
       method: "PUT",
-      headers: { "X-Max-User-Id": state.maxUserId },
       body: JSON.stringify(payload),
     });
   },
 
   adminListTopics() {
-    return this.request("/api/v1/admin/topics", {
-      headers: { "X-Max-User-Id": state.maxUserId },
-    });
+    return this.request("/api/v1/admin/topics");
   },
 
   adminCreateTopic(payload) {
     return this.request("/api/v1/admin/topics", {
       method: "POST",
-      headers: { "X-Max-User-Id": state.maxUserId },
       body: JSON.stringify(payload),
     });
   },
@@ -127,21 +122,17 @@ const api = {
   adminUpdateTopic(id, payload) {
     return this.request(`/api/v1/admin/topics/${id}`, {
       method: "PUT",
-      headers: { "X-Max-User-Id": state.maxUserId },
       body: JSON.stringify(payload),
     });
   },
 
   adminListUsers() {
-    return this.request("/api/v1/admin/users", {
-      headers: { "X-Max-User-Id": state.maxUserId },
-    });
+    return this.request("/api/v1/admin/users");
   },
 
   adminUpdateUser(id, payload) {
     return this.request(`/api/v1/admin/users/${id}`, {
       method: "PUT",
-      headers: { "X-Max-User-Id": state.maxUserId },
       body: JSON.stringify(payload),
     });
   },
@@ -158,6 +149,11 @@ function setLaunchStatus(message) {
 function persistSession() {
   localStorage.setItem("max_user_id", state.maxUserId);
   localStorage.setItem("full_name", state.fullName);
+  if (state.accessToken) {
+    localStorage.setItem("access_token", state.accessToken);
+  } else {
+    localStorage.removeItem("access_token");
+  }
 }
 
 function setSession() {
@@ -192,6 +188,7 @@ async function hydrateFromMaxWebApp() {
       const session = await api.createWebAppSession(rawInitData);
       state.maxUserId = String(session.max_user_id || "");
       state.fullName = String(session.full_name || "");
+      state.accessToken = String(session.access_token || "");
       byId("maxUserId").value = state.maxUserId;
       byId("fullName").value = state.fullName;
       persistSession();
@@ -484,9 +481,27 @@ async function addTopic() {
   await loadCatalog();
 }
 
+async function validateStoredSession() {
+  if (!state.accessToken) {
+    return;
+  }
+  try {
+    const me = await api.getMe();
+    state.maxUserId = String(me.max_user_id || state.maxUserId);
+    state.fullName = String(me.full_name || state.fullName);
+    persistSession();
+  } catch (error) {
+    console.warn("Stored session is invalid", error);
+    state.accessToken = "";
+    persistSession();
+  }
+}
+
 async function init() {
   hydrateSession();
+  await validateStoredSession();
   await hydrateFromMaxWebApp();
+  hydrateSession();
 
   document.querySelectorAll(".nav-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {

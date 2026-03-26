@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 from .config import get_settings
 from .database import Base, SessionLocal, engine, get_db
 from .max_webapp import validate_init_data
-from .models import Category, Hotel, Topic
+from .models import Category, Hotel, Topic, User
 from .schemas import (
     BindEmailRequest,
     CatalogOut,
@@ -50,10 +50,12 @@ from .services import (
     list_user_tickets,
     list_users,
     request_email_code,
+    require_active_user,
     require_admin_user,
     update_user,
     verify_email_code,
 )
+from .session_auth import SessionPrincipal, create_session_token, verify_session_token
 
 
 settings = get_settings()
@@ -79,15 +81,46 @@ app.add_middleware(
 app.mount("/app/assets", StaticFiles(directory=WEBAPP_DIR), name="webapp-assets")
 
 
-def require_admin(
-    x_max_user_id: str = Header(default="", alias="X-Max-User-Id"),
-    db: Session = Depends(get_db),
-) -> str:
+def _extract_bearer_token(authorization: str) -> str:
+    if not authorization:
+        raise ValueError("Authorization header is required")
+    prefix = "Bearer "
+    if not authorization.startswith(prefix):
+        raise ValueError("Authorization header must use Bearer token")
+    token = authorization[len(prefix):].strip()
+    if not token:
+        raise ValueError("Authorization token is empty")
+    return token
+
+
+def require_session_principal(
+    authorization: str = Header(default="", alias="Authorization"),
+) -> SessionPrincipal:
     try:
-        require_admin_user(db, x_max_user_id)
+        token = _extract_bearer_token(authorization)
+        return verify_session_token(token)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+
+
+def require_current_user(
+    principal: SessionPrincipal = Depends(require_session_principal),
+    db: Session = Depends(get_db),
+) -> User:
+    try:
+        return require_active_user(db, principal.max_user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+
+
+def require_admin(
+    principal: SessionPrincipal = Depends(require_session_principal),
+    db: Session = Depends(get_db),
+) -> User:
+    try:
+        return require_admin_user(db, principal.max_user_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    return x_max_user_id
 
 
 def bind_if_known(db: Session, max_user_id: str):
@@ -142,13 +175,20 @@ async def verify_email_code_endpoint(payload: VerifyEmailCodeRequest, db: Sessio
 async def webapp_session_endpoint(payload: WebAppSessionRequest) -> WebAppSessionOut:
     try:
         webapp_user = validate_init_data(payload.init_data, bot_token=settings.max_bot_token)
+        access_token = create_session_token(max_user_id=webapp_user.max_user_id, full_name=webapp_user.full_name)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return WebAppSessionOut(
         max_user_id=webapp_user.max_user_id,
         full_name=webapp_user.full_name,
         init_data_validated=True,
+        access_token=access_token,
     )
+
+
+@app.get("/api/v1/auth/me", response_model=UserOut)
+async def auth_me(current_user: User = Depends(require_current_user)) -> UserOut:
+    return UserOut.model_validate(current_user)
 
 
 @app.get("/api/v1/users/by-max/{max_user_id}", response_model=UserOut)

@@ -30,6 +30,7 @@ class WebAppSessionOut(BaseModel):
     max_user_id: str
     full_name: str
     init_data_validated: bool
+    access_token: str
 
 
 class UserOut(BaseModel):

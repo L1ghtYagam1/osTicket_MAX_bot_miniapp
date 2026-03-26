@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     public_domain: str = ""
     public_webapp_url: str = ""
     public_api_base_url: str = ""
+    max_session_secret: str = ""
 
     osticket_api_url: str = ""
     osticket_api_key: str = ""
