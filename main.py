@@ -1,3 +1,4 @@
+import contextlib
 import asyncio
 import json
 import logging
@@ -789,6 +790,25 @@ async def process_status_notifications(max_client: MaxBotClient, backend: Backen
             logging.exception("Не удалось отправить уведомление о смене статуса: %s", notification)
 
 
+async def notifications_loop(
+    max_client: MaxBotClient,
+    backend: BackendClient,
+    stop_event: asyncio.Event,
+) -> None:
+    while not stop_event.is_set():
+        try:
+            await process_status_notifications(max_client, backend)
+            touch_heartbeat()
+        except Exception:
+            logging.exception("Не удалось обработать уведомления о смене статусов")
+            touch_heartbeat()
+
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=TICKET_STATUS_POLL_INTERVAL_SECONDS)
+        except asyncio.TimeoutError:
+            continue
+
+
 async def run() -> None:
     if not MAX_BOT_TOKEN:
         raise RuntimeError("Не задан MAX_BOT_TOKEN")
@@ -799,6 +819,8 @@ async def run() -> None:
     backend = BackendClient(BACKEND_API_URL)
     await max_client.start()
     await backend.start()
+    stop_event = asyncio.Event()
+    notifications_task = asyncio.create_task(notifications_loop(max_client, backend, stop_event))
 
     try:
         while True:
@@ -808,12 +830,14 @@ async def run() -> None:
                 for update in updates:
                     await dispatch_update(max_client, backend, update)
                     touch_heartbeat()
-                await process_status_notifications(max_client, backend)
             except Exception:
                 logging.exception("Ошибка в цикле обработки обновлений")
                 touch_heartbeat()
-            await asyncio.sleep(TICKET_STATUS_POLL_INTERVAL_SECONDS)
     finally:
+        stop_event.set()
+        notifications_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await notifications_task
         await backend.close()
         await max_client.close()
 

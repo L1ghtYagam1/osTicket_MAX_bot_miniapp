@@ -72,6 +72,17 @@ const api = {
     });
   },
 
+  adminListUsers() {
+    return this.request("/api/v1/admin/users");
+  },
+
+  adminUpdateUser(id, payload) {
+    return this.request(`/api/v1/admin/users/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+
   adminListHotels() {
     return this.request("/api/v1/admin/hotels");
   },
@@ -126,15 +137,8 @@ const api = {
     });
   },
 
-  adminListUsers() {
-    return this.request("/api/v1/admin/users");
-  },
-
-  adminUpdateUser(id, payload) {
-    return this.request(`/api/v1/admin/users/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    });
+  adminListAuditLogs() {
+    return this.request("/api/v1/admin/audit-logs");
   },
 };
 
@@ -165,6 +169,20 @@ function setSession() {
 function hydrateSession() {
   byId("maxUserId").value = state.maxUserId;
   byId("fullName").value = state.fullName;
+}
+
+async function validateStoredSession() {
+  if (!state.accessToken) return;
+  try {
+    const me = await api.getMe();
+    state.maxUserId = String(me.max_user_id || state.maxUserId);
+    state.fullName = String(me.full_name || state.fullName);
+    persistSession();
+  } catch (error) {
+    console.warn("Stored session is invalid", error);
+    state.accessToken = "";
+    persistSession();
+  }
 }
 
 async function hydrateFromMaxWebApp() {
@@ -372,23 +390,41 @@ function renderUsers(items) {
   `).join("") || `<div class="list-item">Пусто</div>`;
 }
 
+function renderAuditLogs(items) {
+  const root = byId("auditAdminList");
+  root.innerHTML = items.map((item) => `
+    <div class="list-item">
+      <div class="list-head">
+        <span>${item.action} ${item.entity_type}#${item.entity_id}</span>
+        <span>${new Date(item.created_at).toLocaleString("ru-RU")}</span>
+      </div>
+      <div class="list-meta">actor_user_id: ${item.actor_user_id}</div>
+      <div class="list-meta">${item.details_json}</div>
+    </div>
+  `).join("") || `<div class="list-item">Пусто</div>`;
+}
+
 async function loadAdmin() {
   try {
-    const [users, hotels, categories, topics] = await Promise.all([
+    const [users, hotels, categories, topics, auditLogs] = await Promise.all([
       api.adminListUsers(),
       api.adminListHotels(),
       api.adminListCategories(),
       api.adminListTopics(),
+      api.adminListAuditLogs(),
     ]);
     renderUsers(users);
     renderAdminList(hotels, "hotelsAdminList", "hotels");
     renderAdminList(categories, "categoriesAdminList", "categories");
     renderAdminList(topics, "topicsAdminList", "topics");
+    renderAuditLogs(auditLogs);
   } catch (error) {
-    byId("usersAdminList").innerHTML = `<div class="list-item">${error.message}</div>`;
-    byId("hotelsAdminList").innerHTML = `<div class="list-item">${error.message}</div>`;
-    byId("categoriesAdminList").innerHTML = `<div class="list-item">${error.message}</div>`;
-    byId("topicsAdminList").innerHTML = `<div class="list-item">${error.message}</div>`;
+    const message = `<div class="list-item">${error.message}</div>`;
+    byId("usersAdminList").innerHTML = message;
+    byId("hotelsAdminList").innerHTML = message;
+    byId("categoriesAdminList").innerHTML = message;
+    byId("topicsAdminList").innerHTML = message;
+    byId("auditAdminList").innerHTML = message;
   }
 }
 
@@ -481,22 +517,6 @@ async function addTopic() {
   await loadCatalog();
 }
 
-async function validateStoredSession() {
-  if (!state.accessToken) {
-    return;
-  }
-  try {
-    const me = await api.getMe();
-    state.maxUserId = String(me.max_user_id || state.maxUserId);
-    state.fullName = String(me.full_name || state.fullName);
-    persistSession();
-  } catch (error) {
-    console.warn("Stored session is invalid", error);
-    state.accessToken = "";
-    persistSession();
-  }
-}
-
 async function init() {
   hydrateSession();
   await validateStoredSession();
@@ -506,12 +526,8 @@ async function init() {
   document.querySelectorAll(".nav-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       activateTab(btn.dataset.tab);
-      if (btn.dataset.tab === "tickets") {
-        await refreshTickets();
-      }
-      if (btn.dataset.tab === "admin") {
-        await loadAdmin();
-      }
+      if (btn.dataset.tab === "tickets") await refreshTickets();
+      if (btn.dataset.tab === "admin") await loadAdmin();
     });
   });
 
@@ -525,6 +541,7 @@ async function init() {
   byId("addCategoryBtn").addEventListener("click", addCategory);
   byId("addTopicBtn").addEventListener("click", addTopic);
   byId("refreshUsersBtn").addEventListener("click", loadAdmin);
+  byId("refreshAuditBtn").addEventListener("click", loadAdmin);
 
   await loadCatalog();
 }
