@@ -41,10 +41,22 @@ def validate_email(value: str) -> bool:
     return bool(re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", value))
 
 
+def validate_allowed_email_domain(email: str) -> None:
+    allowed_domains = settings.allowed_email_domains
+    if not allowed_domains:
+        return
+
+    domain = email.rsplit("@", 1)[-1].strip().lower()
+    if domain not in allowed_domains:
+        allowed_list = ", ".join(allowed_domains)
+        raise ValueError(f"Разрешены только рабочие почты с доменами: {allowed_list}")
+
+
 def bind_user_email(db: Session, max_user_id: str, full_name: str, email: str) -> User:
     if not validate_email(email):
         raise ValueError("Некорректный email")
 
+    validate_allowed_email_domain(email)
     user = db.scalar(select(User).where(User.max_user_id == max_user_id))
     if user is None:
         user = User(
@@ -68,6 +80,7 @@ def request_email_code(db: Session, max_user_id: str, full_name: str, email: str
     if not validate_email(email):
         raise ValueError("Некорректный email")
 
+    validate_allowed_email_domain(email)
     code = f"{random.randint(100000, 999999)}"
     now = datetime.utcnow()
     expires_at = datetime.utcnow() + timedelta(minutes=settings.email_verification_ttl_minutes)

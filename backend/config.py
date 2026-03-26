@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     osticket_status_api_url: str = ""
     email_verification_ttl_minutes: int = 10
     max_webapp_auth_max_age_seconds: int = 86400
+    max_session_ttl_seconds: int = 0
     internal_api_token: str = ""
     ticket_status_poll_interval_seconds: int = 60
 
@@ -41,6 +42,7 @@ class Settings(BaseSettings):
     smtp_sender: str = ""
     smtp_use_tls: bool = True
 
+    allowed_email_domains_raw: str = Field(default="", alias="ALLOWED_EMAIL_DOMAINS")
     admin_max_ids_raw: str = Field(default="", alias="ADMIN_MAX_IDS")
 
     @property
@@ -49,6 +51,13 @@ class Settings(BaseSettings):
         if not raw:
             return ["*"]
         return [item.strip() for item in raw.split(",") if item.strip()]
+
+    @property
+    def allowed_email_domains(self) -> List[str]:
+        raw = getattr(self, "allowed_email_domains_raw", "").strip()
+        if not raw:
+            return []
+        return [item.strip().lower() for item in raw.split(",") if item.strip()]
 
     @property
     def admin_max_ids(self) -> List[str]:

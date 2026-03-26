@@ -119,6 +119,7 @@ PUBLIC_WEBAPP_URL=https://maxapp.example.com/app
 PUBLIC_API_BASE_URL=https://maxapp.example.com/api/v1
 MAX_WEBAPP_AUTH_MAX_AGE_SECONDS=86400
 MAX_SESSION_SECRET=change-me-for-production
+MAX_SESSION_TTL_SECONDS=0
 
 
 # =========================
@@ -169,6 +170,7 @@ SMTP_USERNAME=
 SMTP_PASSWORD=
 SMTP_SENDER=
 SMTP_USE_TLS=true
+ALLOWED_EMAIL_DOMAINS=ukprovence.ru
 ```
 
 ## Установка через Docker
@@ -254,7 +256,9 @@ ADMIN_MAX_IDS=
 
 `MAX_BOT_TOKEN` используется не только ботом, но и backend для серверной валидации запуска mini app из MAX.
 `MAX_SESSION_SECRET` используется backend для подписи web session token. В production задайте своё длинное секретное значение.
+`MAX_SESSION_TTL_SECONDS=0` означает бессрочную web-сессию: пользователь подтверждает рабочую почту один раз и потом не входит повторно, пока не очищен браузер, не сменён `MAX_SESSION_SECRET` или доступ не отозван вручную.
 `INTERNAL_API_TOKEN` используется ботом и backend для доставки уведомлений о смене статусов.
+`ALLOWED_EMAIL_DOMAINS` ограничивает подтверждение только рабочими почтами компании. Укажите один или несколько доменов через запятую, например `ukprovence.ru,hotel-a.ru,hotel-b.ru`.
 
 Если проект запускается локально без отдельного reverse proxy, значения по умолчанию для `BACKEND_API_URL` и `DATABASE_URL` можно не менять.
 

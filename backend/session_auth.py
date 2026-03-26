@@ -64,7 +64,8 @@ def verify_session_token(token: str) -> SessionPrincipal:
     if not max_user_id or not issued_at:
         raise ValueError("Session token payload is incomplete")
 
-    if int(time()) - issued_at > settings.max_webapp_auth_max_age_seconds:
+    session_ttl = settings.max_session_ttl_seconds
+    if session_ttl > 0 and int(time()) - issued_at > session_ttl:
         raise ValueError("Session token is expired")
 
     return SessionPrincipal(max_user_id=max_user_id, full_name=full_name, issued_at=issued_at)
