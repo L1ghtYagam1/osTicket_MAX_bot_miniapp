@@ -13,6 +13,7 @@ from .database import Base, SessionLocal, engine, get_db
 from .max_webapp import validate_init_data
 from .models import Category, Hotel, Topic, User
 from .schemas import (
+    AdminAuditLogOut,
     BindEmailRequest,
     CatalogOut,
     CategoryCreateRequest,
@@ -25,6 +26,7 @@ from .schemas import (
     MessageOut,
     RequestEmailCodeRequest,
     TicketCreateRequest,
+    TicketStatusNotificationOut,
     TicketOut,
     TicketStatusOut,
     TopicCreateRequest,
@@ -49,9 +51,14 @@ from .services import (
     init_defaults,
     list_user_tickets,
     list_users,
+    list_audit_logs,
+    list_pending_status_notifications,
+    log_admin_action,
+    mark_notification_sent,
     request_email_code,
     require_active_user,
     require_admin_user,
+    sync_ticket_statuses,
     update_user,
     verify_email_code,
 )
@@ -121,6 +128,16 @@ def require_admin(
         return require_admin_user(db, principal.max_user_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+
+def require_internal_token(
+    x_internal_token: str = Header(default="", alias="X-Internal-Token"),
+) -> str:
+    if not settings.internal_api_token:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Internal API token is not configured")
+    if x_internal_token != settings.internal_api_token:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid internal API token")
+    return x_internal_token
 
 
 def bind_if_known(db: Session, max_user_id: str):
@@ -249,17 +266,25 @@ async def admin_hotels(db: Session = Depends(get_db)) -> list[HotelOut]:
     return [HotelOut.model_validate(item) for item in hotels]
 
 
-@app.post("/api/v1/admin/hotels", response_model=HotelOut, dependencies=[Depends(require_admin)])
-async def create_hotel(payload: HotelCreateRequest, db: Session = Depends(get_db)) -> HotelOut:
+@app.post("/api/v1/admin/hotels", response_model=HotelOut)
+async def create_hotel(payload: HotelCreateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> HotelOut:
     try:
         hotel = create_hotel_record(db, payload.name)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    log_admin_action(
+        db,
+        actor_user_id=admin_user.id,
+        action="create",
+        entity_type="hotel",
+        entity_id=str(hotel.id),
+        details={"name": hotel.name},
+    )
     return HotelOut.model_validate(hotel)
 
 
-@app.put("/api/v1/admin/hotels/{hotel_id}", response_model=HotelOut, dependencies=[Depends(require_admin)])
-async def update_hotel(hotel_id: int, payload: HotelUpdateRequest, db: Session = Depends(get_db)) -> HotelOut:
+@app.put("/api/v1/admin/hotels/{hotel_id}", response_model=HotelOut)
+async def update_hotel(hotel_id: int, payload: HotelUpdateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> HotelOut:
     hotel = db.get(Hotel, hotel_id)
     if hotel is None:
         raise HTTPException(status_code=404, detail="Hotel not found")
@@ -267,6 +292,14 @@ async def update_hotel(hotel_id: int, payload: HotelUpdateRequest, db: Session =
     hotel.is_active = payload.is_active
     db.commit()
     db.refresh(hotel)
+    log_admin_action(
+        db,
+        actor_user_id=admin_user.id,
+        action="update",
+        entity_type="hotel",
+        entity_id=str(hotel.id),
+        details={"name": hotel.name, "is_active": hotel.is_active},
+    )
     return HotelOut.model_validate(hotel)
 
 
@@ -282,17 +315,25 @@ async def admin_categories(db: Session = Depends(get_db)) -> list[CategoryOut]:
     return [CategoryOut.model_validate(item) for item in categories]
 
 
-@app.post("/api/v1/admin/categories", response_model=CategoryOut, dependencies=[Depends(require_admin)])
-async def create_category(payload: CategoryCreateRequest, db: Session = Depends(get_db)) -> CategoryOut:
+@app.post("/api/v1/admin/categories", response_model=CategoryOut)
+async def create_category(payload: CategoryCreateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> CategoryOut:
     try:
         category = create_category_record(db, payload.name, payload.osticket_topic_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    log_admin_action(
+        db,
+        actor_user_id=admin_user.id,
+        action="create",
+        entity_type="category",
+        entity_id=str(category.id),
+        details={"name": category.name, "osticket_topic_id": category.osticket_topic_id},
+    )
     return CategoryOut.model_validate(category)
 
 
-@app.put("/api/v1/admin/categories/{category_id}", response_model=CategoryOut, dependencies=[Depends(require_admin)])
-async def update_category(category_id: int, payload: CategoryUpdateRequest, db: Session = Depends(get_db)) -> CategoryOut:
+@app.put("/api/v1/admin/categories/{category_id}", response_model=CategoryOut)
+async def update_category(category_id: int, payload: CategoryUpdateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> CategoryOut:
     category = db.get(Category, category_id)
     if category is None:
         raise HTTPException(status_code=404, detail="Category not found")
@@ -302,6 +343,14 @@ async def update_category(category_id: int, payload: CategoryUpdateRequest, db: 
     db.commit()
     db.refresh(category)
     db.refresh(category, attribute_names=["topics"])
+    log_admin_action(
+        db,
+        actor_user_id=admin_user.id,
+        action="update",
+        entity_type="category",
+        entity_id=str(category.id),
+        details={"name": category.name, "osticket_topic_id": category.osticket_topic_id, "is_active": category.is_active},
+    )
     return CategoryOut.model_validate(category)
 
 
@@ -311,17 +360,25 @@ async def admin_topics(db: Session = Depends(get_db)) -> list[TopicOut]:
     return [TopicOut.model_validate(item) for item in topics]
 
 
-@app.post("/api/v1/admin/topics", response_model=TopicOut, dependencies=[Depends(require_admin)])
-async def create_topic(payload: TopicCreateRequest, db: Session = Depends(get_db)) -> TopicOut:
+@app.post("/api/v1/admin/topics", response_model=TopicOut)
+async def create_topic(payload: TopicCreateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> TopicOut:
     try:
         topic = create_topic_record(db, payload.category_id, payload.name)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    log_admin_action(
+        db,
+        actor_user_id=admin_user.id,
+        action="create",
+        entity_type="topic",
+        entity_id=str(topic.id),
+        details={"name": topic.name, "category_id": topic.category_id},
+    )
     return TopicOut.model_validate(topic)
 
 
-@app.put("/api/v1/admin/topics/{topic_id}", response_model=TopicOut, dependencies=[Depends(require_admin)])
-async def update_topic(topic_id: int, payload: TopicUpdateRequest, db: Session = Depends(get_db)) -> TopicOut:
+@app.put("/api/v1/admin/topics/{topic_id}", response_model=TopicOut)
+async def update_topic(topic_id: int, payload: TopicUpdateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> TopicOut:
     topic = db.get(Topic, topic_id)
     if topic is None:
         raise HTTPException(status_code=404, detail="Topic not found")
@@ -333,6 +390,14 @@ async def update_topic(topic_id: int, payload: TopicUpdateRequest, db: Session =
     topic.is_active = payload.is_active
     db.commit()
     db.refresh(topic)
+    log_admin_action(
+        db,
+        actor_user_id=admin_user.id,
+        action="update",
+        entity_type="topic",
+        entity_id=str(topic.id),
+        details={"name": topic.name, "category_id": topic.category_id, "is_active": topic.is_active},
+    )
     return TopicOut.model_validate(topic)
 
 
@@ -341,8 +406,8 @@ async def admin_users(db: Session = Depends(get_db)) -> list[UserOut]:
     return [UserOut.model_validate(item) for item in list_users(db)]
 
 
-@app.put("/api/v1/admin/users/{user_id}", response_model=UserOut, dependencies=[Depends(require_admin)])
-async def admin_update_user(user_id: int, payload: UserUpdateRequest, db: Session = Depends(get_db)) -> UserOut:
+@app.put("/api/v1/admin/users/{user_id}", response_model=UserOut)
+async def admin_update_user(user_id: int, payload: UserUpdateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> UserOut:
     try:
         user = update_user(
             db,
@@ -353,4 +418,49 @@ async def admin_update_user(user_id: int, payload: UserUpdateRequest, db: Sessio
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    log_admin_action(
+        db,
+        actor_user_id=admin_user.id,
+        action="update",
+        entity_type="user",
+        entity_id=str(user.id),
+        details={"full_name": user.full_name, "is_admin": user.is_admin, "is_active": user.is_active},
+    )
     return UserOut.model_validate(user)
+
+
+@app.get("/api/v1/admin/audit-logs", response_model=list[AdminAuditLogOut], dependencies=[Depends(require_admin)])
+async def admin_audit_logs(db: Session = Depends(get_db)) -> list[AdminAuditLogOut]:
+    return [AdminAuditLogOut.model_validate(item) for item in list_audit_logs(db)]
+
+
+@app.post("/api/v1/internal/ticket-status-sync", response_model=list[TicketStatusNotificationOut], dependencies=[Depends(require_internal_token)])
+async def internal_ticket_status_sync(db: Session = Depends(get_db)) -> list[TicketStatusNotificationOut]:
+    await sync_ticket_statuses(db)
+    notifications = list_pending_status_notifications(db)
+    result: list[TicketStatusNotificationOut] = []
+    for item in notifications:
+        ticket = item.ticket
+        user = ticket.user
+        result.append(
+            TicketStatusNotificationOut(
+                id=item.id,
+                ticket_id=item.ticket_id,
+                max_user_id=user.max_user_id,
+                external_id=ticket.external_id,
+                subject=ticket.subject,
+                previous_status=item.previous_status,
+                new_status=item.new_status,
+                created_at=item.created_at,
+            )
+        )
+    return result
+
+
+@app.post("/api/v1/internal/ticket-status-notifications/{notification_id}/sent", response_model=MessageOut, dependencies=[Depends(require_internal_token)])
+async def mark_ticket_status_notification_sent(notification_id: int, db: Session = Depends(get_db)) -> MessageOut:
+    try:
+        mark_notification_sent(db, notification_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return MessageOut(message="Notification marked as sent")

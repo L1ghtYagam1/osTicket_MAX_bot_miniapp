@@ -1,5 +1,6 @@
 import random
 import re
+import json
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 from .config import get_settings
 from .defaults import DEFAULT_CATEGORIES, DEFAULT_HOTELS
 from .mailer import send_verification_email
-from .models import Category, EmailVerification, Hotel, Ticket, Topic, User
+from .models import AdminAuditLog, Category, EmailVerification, Hotel, Ticket, TicketStatusNotification, Topic, User
 from .osticket import OsTicketClient
 
 
@@ -149,6 +150,10 @@ def list_users(db: Session) -> list[User]:
     return list(db.scalars(select(User).order_by(User.created_at.desc())).all())
 
 
+def list_audit_logs(db: Session) -> list[AdminAuditLog]:
+    return list(db.scalars(select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc())).all())
+
+
 def update_user(db: Session, user_id: int, *, full_name: str, is_admin: bool, is_active: bool) -> User:
     user = db.get(User, user_id)
     if user is None:
@@ -159,6 +164,28 @@ def update_user(db: Session, user_id: int, *, full_name: str, is_admin: bool, is
     db.commit()
     db.refresh(user)
     return user
+
+
+def log_admin_action(
+    db: Session,
+    *,
+    actor_user_id: int,
+    action: str,
+    entity_type: str,
+    entity_id: str,
+    details: dict,
+) -> AdminAuditLog:
+    log = AdminAuditLog(
+        actor_user_id=actor_user_id,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        details_json=json.dumps(details, ensure_ascii=False),
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+    return log
 
 
 async def create_ticket(
@@ -243,6 +270,63 @@ async def enrich_tickets_status(tickets: list[Ticket]) -> list[Ticket]:
     for ticket in tickets:
         enriched.append(await enrich_ticket_status(ticket))
     return enriched
+
+
+async def sync_ticket_statuses(db: Session) -> list[TicketStatusNotification]:
+    notifications: list[TicketStatusNotification] = []
+    tickets = list(db.scalars(select(Ticket).order_by(Ticket.created_at.desc())).all())
+    for ticket in tickets:
+        previous_status = ticket.status
+        try:
+            current_status = await osticket_client.get_ticket_status(ticket.external_id)
+        except Exception:
+            continue
+        if not current_status or current_status == previous_status:
+            continue
+
+        ticket.status = current_status
+        db.add(ticket)
+
+        existing = db.scalar(
+            select(TicketStatusNotification)
+            .where(TicketStatusNotification.ticket_id == ticket.id)
+            .where(TicketStatusNotification.new_status == current_status)
+        )
+        if existing is not None:
+            continue
+
+        notification = TicketStatusNotification(
+            ticket_id=ticket.id,
+            previous_status=previous_status,
+            new_status=current_status,
+            notified_at=None,
+        )
+        db.add(notification)
+        notifications.append(notification)
+
+    db.commit()
+    for notification in notifications:
+        db.refresh(notification)
+    return notifications
+
+
+def list_pending_status_notifications(db: Session) -> list[TicketStatusNotification]:
+    return list(
+        db.scalars(
+            select(TicketStatusNotification)
+            .options(selectinload(TicketStatusNotification.ticket).selectinload(Ticket.user))
+            .where(TicketStatusNotification.notified_at.is_(None))
+            .order_by(TicketStatusNotification.created_at.asc())
+        ).all()
+    )
+
+
+def mark_notification_sent(db: Session, notification_id: int) -> None:
+    notification = db.get(TicketStatusNotification, notification_id)
+    if notification is None:
+        raise ValueError("Уведомление не найдено")
+    notification.notified_at = datetime.utcnow()
+    db.commit()
 
 
 def create_hotel_record(db: Session, name: str) -> Hotel:

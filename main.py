@@ -23,6 +23,8 @@ MAX_POLL_TIMEOUT = int(os.getenv("MAX_POLL_TIMEOUT", "25"))
 BACKEND_API_URL = os.getenv("BACKEND_API_URL", "http://backend:8000/api/v1").strip().rstrip("/")
 BACKEND_TIMEOUT = int(os.getenv("BACKEND_TIMEOUT", "20"))
 PUBLIC_WEBAPP_URL = os.getenv("PUBLIC_WEBAPP_URL", "").strip()
+INTERNAL_API_TOKEN = os.getenv("INTERNAL_API_TOKEN", "").strip()
+TICKET_STATUS_POLL_INTERVAL_SECONDS = int(os.getenv("TICKET_STATUS_POLL_INTERVAL_SECONDS", "60"))
 ADMIN_IDS = {item.strip() for item in os.getenv("ADMIN_MAX_IDS", "").split(",") if item.strip()}
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -271,6 +273,24 @@ class BackendClient:
 
     async def list_users(self, admin_max_user_id: str) -> list[dict[str, Any]]:
         return await self.request("GET", "/admin/users", headers={"X-Max-User-Id": admin_max_user_id})
+
+    async def sync_status_notifications(self) -> list[dict[str, Any]]:
+        if not INTERNAL_API_TOKEN:
+            return []
+        return await self.request(
+            "POST",
+            "/internal/ticket-status-sync",
+            headers={"X-Internal-Token": INTERNAL_API_TOKEN},
+        )
+
+    async def mark_status_notification_sent(self, notification_id: int) -> None:
+        if not INTERNAL_API_TOKEN:
+            return
+        await self.request(
+            "POST",
+            f"/internal/ticket-status-notifications/{notification_id}/sent",
+            headers={"X-Internal-Token": INTERNAL_API_TOKEN},
+        )
 
 
 class MaxBotClient:
@@ -748,6 +768,27 @@ async def dispatch_update(max_client: MaxBotClient, backend: BackendClient, upda
     logging.info("Пропускаю неподдерживаемое обновление: %s", update_type)
 
 
+async def process_status_notifications(max_client: MaxBotClient, backend: BackendClient) -> None:
+    if not INTERNAL_API_TOKEN:
+        return
+    notifications = await backend.sync_status_notifications()
+    for notification in notifications:
+        try:
+            message = (
+                f"Статус заявки #{notification['external_id']} изменился:\n"
+                f"{notification['previous_status']} -> {notification['new_status']}\n"
+                f"Тема: {notification['subject']}"
+            )
+            await max_client.send_message(
+                notification["max_user_id"],
+                message,
+                user_id=notification["max_user_id"],
+            )
+            await backend.mark_status_notification_sent(notification["id"])
+        except Exception:
+            logging.exception("Не удалось отправить уведомление о смене статуса: %s", notification)
+
+
 async def run() -> None:
     if not MAX_BOT_TOKEN:
         raise RuntimeError("Не задан MAX_BOT_TOKEN")
@@ -767,10 +808,11 @@ async def run() -> None:
                 for update in updates:
                     await dispatch_update(max_client, backend, update)
                     touch_heartbeat()
+                await process_status_notifications(max_client, backend)
             except Exception:
                 logging.exception("Ошибка в цикле обработки обновлений")
                 touch_heartbeat()
-                await asyncio.sleep(3)
+            await asyncio.sleep(TICKET_STATUS_POLL_INTERVAL_SECONDS)
     finally:
         await backend.close()
         await max_client.close()

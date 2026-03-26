@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     osticket_status_api_url: str = ""
     email_verification_ttl_minutes: int = 10
     max_webapp_auth_max_age_seconds: int = 86400
+    internal_api_token: str = ""
+    ticket_status_poll_interval_seconds: int = 60
 
     smtp_host: str = ""
     smtp_port: int = 587

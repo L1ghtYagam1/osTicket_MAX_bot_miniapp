@@ -50,6 +50,31 @@ class UserUpdateRequest(BaseModel):
     is_active: bool
 
 
+class AdminAuditLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    actor_user_id: int
+    action: str
+    entity_type: str
+    entity_id: str
+    details_json: str
+    created_at: datetime
+
+
+class TicketStatusNotificationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    ticket_id: int
+    max_user_id: str
+    external_id: str
+    subject: str
+    previous_status: str
+    new_status: str
+    created_at: datetime
+
+
 class TopicOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

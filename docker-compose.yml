@@ -1,4 +1,20 @@
 services:
+  postgres:
+    image: postgres:16
+    container_name: max-support-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: maxsupport
+      POSTGRES_USER: maxsupport
+      POSTGRES_PASSWORD: maxsupport
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maxsupport -d maxsupport"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   backend:
     build:
       context: .
@@ -7,6 +23,9 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - ./backend:/app/backend
       - ./webapp:/app/webapp
@@ -57,3 +76,4 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  postgres_data:

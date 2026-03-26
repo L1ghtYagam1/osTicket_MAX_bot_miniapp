@@ -227,6 +227,13 @@ cp .env.example .env
 nano .env
 ```
 
+Для production с PostgreSQL можно взять за основу:
+
+```bash
+cp .env.production.example .env
+nano .env
+```
+
 Windows PowerShell:
 
 ```powershell
@@ -241,11 +248,13 @@ PUBLIC_DOMAIN=maxapp.example.com
 OSTICKET_API_URL=https://your-osticket.example/api/tickets.json
 OSTICKET_API_KEY=
 OSTICKET_STATUS_API_URL=
+INTERNAL_API_TOKEN=change-internal-api-token
 ADMIN_MAX_IDS=
 ```
 
 `MAX_BOT_TOKEN` используется не только ботом, но и backend для серверной валидации запуска mini app из MAX.
 `MAX_SESSION_SECRET` используется backend для подписи web session token. В production задайте своё длинное секретное значение.
+`INTERNAL_API_TOKEN` используется ботом и backend для доставки уведомлений о смене статусов.
 
 Если проект запускается локально без отдельного reverse proxy, значения по умолчанию для `BACKEND_API_URL` и `DATABASE_URL` можно не менять.
 
@@ -413,6 +422,8 @@ python scripts/backup_db.py
 
 - `POST /api/v1/auth/request-email-code`
 - `POST /api/v1/auth/verify-email-code`
+- `POST /api/v1/auth/webapp-session`
+- `GET /api/v1/auth/me`
 - `GET /api/v1/users/by-max/{max_user_id}`
 
 ### Catalog
@@ -438,11 +449,50 @@ python scripts/backup_db.py
 - `GET /api/v1/admin/topics`
 - `POST /api/v1/admin/topics`
 - `PUT /api/v1/admin/topics/{topic_id}`
+- `GET /api/v1/admin/audit-logs`
 
-Для admin routes используется header:
+Для admin routes теперь используется:
 
 ```text
-X-Max-User-Id
+Authorization: Bearer <access_token>
+```
+
+### Internal
+
+- `POST /api/v1/internal/ticket-status-sync`
+- `POST /api/v1/internal/ticket-status-notifications/{notification_id}/sent`
+
+Для internal routes используется header:
+
+```text
+X-Internal-Token: <INTERNAL_API_TOKEN>
+```
+
+## PostgreSQL для production
+
+В `docker-compose.yml` уже добавлен сервис `postgres`.
+
+Рекомендуемая production-конфигурация лежит в файле [\.env.production.example](/C:/Users/132/Desktop/bot/.env.production.example).
+
+Ключевая строка подключения:
+
+```env
+DATABASE_URL=postgresql+psycopg://maxsupport:maxsupport@postgres:5432/maxsupport
+```
+
+## Автоуведомления о смене статуса
+
+Если заданы:
+
+- `OSTICKET_STATUS_API_URL`
+- `INTERNAL_API_TOKEN`
+
+то backend отслеживает изменения статусов, а бот отправляет уведомления пользователям в MAX.
+
+Интервал задаётся переменной:
+
+```env
+TICKET_STATUS_POLL_INTERVAL_SECONDS=60
 ```
 
 ## Ограничения текущей версии

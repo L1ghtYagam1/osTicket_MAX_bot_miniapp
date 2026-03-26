@@ -26,6 +26,7 @@ class User(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     tickets: Mapped[list["Ticket"]] = relationship(back_populates="user")
+    audit_logs: Mapped[list["AdminAuditLog"]] = relationship(back_populates="actor")
 
 
 class Hotel(Base, TimestampMixin):
@@ -73,6 +74,7 @@ class Ticket(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(64), default="created")
 
     user: Mapped["User"] = relationship(back_populates="tickets")
+    notifications: Mapped[list["TicketStatusNotification"]] = relationship(back_populates="ticket")
 
 
 class EmailVerification(Base, TimestampMixin):
@@ -84,3 +86,29 @@ class EmailVerification(Base, TimestampMixin):
     code: Mapped[str] = mapped_column(String(16))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AdminAuditLog(Base, TimestampMixin):
+    __tablename__ = "admin_audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actor_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    action: Mapped[str] = mapped_column(String(128), index=True)
+    entity_type: Mapped[str] = mapped_column(String(64), index=True)
+    entity_id: Mapped[str] = mapped_column(String(64), index=True)
+    details_json: Mapped[str] = mapped_column(Text, default="{}")
+
+    actor: Mapped["User"] = relationship(back_populates="audit_logs")
+
+
+class TicketStatusNotification(Base, TimestampMixin):
+    __tablename__ = "ticket_status_notifications"
+    __table_args__ = (UniqueConstraint("ticket_id", "new_status", name="uq_ticket_status_notification"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
+    previous_status: Mapped[str] = mapped_column(String(64))
+    new_status: Mapped[str] = mapped_column(String(64))
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    ticket: Mapped["Ticket"] = relationship(back_populates="notifications")
