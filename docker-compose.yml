@@ -7,8 +7,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    ports:
-      - "8000:8000"
     volumes:
       - ./backend:/app/backend
       - ./webapp:/app/webapp
@@ -32,3 +30,30 @@ services:
         condition: service_healthy
     volumes:
       - ./data:/app/data
+      - ./scripts:/app/scripts
+    healthcheck:
+      test: ["CMD", "python", "/app/scripts/healthcheck_bot.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  caddy:
+    image: caddy:2
+    container_name: max-support-caddy
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

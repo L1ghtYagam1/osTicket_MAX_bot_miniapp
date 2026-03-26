@@ -106,7 +106,7 @@ def verify_email_code(db: Session, max_user_id: str, full_name: str, email: str,
     if verification is None:
         raise ValueError("Код не найден или уже использован")
     if verification.expires_at < now:
-        raise ValueError("Срок действия кода истёк")
+        raise ValueError("Срок действия кода истек")
 
     verification.consumed_at = now
     db.commit()
@@ -134,7 +134,7 @@ def require_active_user(db: Session, max_user_id: str) -> User:
     if user is None:
         raise ValueError("Пользователь не зарегистрирован")
     if not user.is_active:
-        raise ValueError("Пользователь отключён")
+        raise ValueError("Пользователь отключен")
     return user
 
 

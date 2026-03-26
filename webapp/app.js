@@ -2,6 +2,7 @@ const state = {
   maxUserId: localStorage.getItem("max_user_id") || "",
   fullName: localStorage.getItem("full_name") || "",
   catalog: null,
+  webAppReady: false,
 };
 
 const api = {
@@ -40,6 +41,13 @@ const api = {
     return this.request("/api/v1/auth/verify-email-code", {
       method: "POST",
       body: JSON.stringify(payload),
+    });
+  },
+
+  createWebAppSession(initData) {
+    return this.request("/api/v1/auth/webapp-session", {
+      method: "POST",
+      body: JSON.stringify({ init_data: initData }),
     });
   },
 
@@ -143,11 +151,79 @@ function byId(id) {
   return document.getElementById(id);
 }
 
+function setLaunchStatus(message) {
+  byId("maxLaunchStatus").textContent = message;
+}
+
+function persistSession() {
+  localStorage.setItem("max_user_id", state.maxUserId);
+  localStorage.setItem("full_name", state.fullName);
+}
+
 function setSession() {
   state.maxUserId = byId("maxUserId").value.trim();
   state.fullName = byId("fullName").value.trim();
-  localStorage.setItem("max_user_id", state.maxUserId);
-  localStorage.setItem("full_name", state.fullName);
+  persistSession();
+}
+
+function hydrateSession() {
+  byId("maxUserId").value = state.maxUserId;
+  byId("fullName").value = state.fullName;
+}
+
+async function hydrateFromMaxWebApp() {
+  const webApp = window.WebApp;
+  if (!webApp) {
+    setLaunchStatus("MAX WebApp не обнаружен. Можно продолжить вручную.");
+    return;
+  }
+
+  try {
+    if (typeof webApp.ready === "function") {
+      webApp.ready();
+    }
+  } catch (error) {
+    console.warn("WebApp.ready failed", error);
+  }
+
+  const rawInitData = webApp.initData || webApp.InitData || "";
+  if (rawInitData) {
+    try {
+      const session = await api.createWebAppSession(rawInitData);
+      state.maxUserId = String(session.max_user_id || "");
+      state.fullName = String(session.full_name || "");
+      byId("maxUserId").value = state.maxUserId;
+      byId("fullName").value = state.fullName;
+      persistSession();
+      state.webAppReady = true;
+      setLaunchStatus("Сессия подтверждена через MAX WebApp.");
+      return;
+    } catch (error) {
+      console.warn("MAX WebApp validation failed", error);
+    }
+  }
+
+  const initData = webApp.initDataUnsafe || webApp.InitDataUnsafe || {};
+  const user = initData.user || initData.sender || {};
+  const maxUserId = user.user_id || user.id || "";
+  const fullName = user.full_name || user.name || "";
+
+  if (maxUserId) {
+    state.maxUserId = String(maxUserId);
+    byId("maxUserId").value = state.maxUserId;
+  }
+  if (fullName) {
+    state.fullName = String(fullName);
+    byId("fullName").value = state.fullName;
+  }
+  if (maxUserId || fullName) {
+    persistSession();
+    state.webAppReady = true;
+    setLaunchStatus("Данные пользователя получены из MAX WebApp без серверной валидации.");
+    return;
+  }
+
+  setLaunchStatus("MAX WebApp доступен, но данные пользователя не переданы. Можно заполнить вручную.");
 }
 
 function activateTab(tab) {
@@ -408,13 +484,10 @@ async function addTopic() {
   await loadCatalog();
 }
 
-function hydrateSession() {
-  byId("maxUserId").value = state.maxUserId;
-  byId("fullName").value = state.fullName;
-}
-
 async function init() {
   hydrateSession();
+  await hydrateFromMaxWebApp();
+
   document.querySelectorAll(".nav-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       activateTab(btn.dataset.tab);

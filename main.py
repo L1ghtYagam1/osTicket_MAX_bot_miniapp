@@ -4,7 +4,8 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from time import time
+from typing import Any, Optional
 
 import aiohttp
 
@@ -21,11 +22,12 @@ MAX_POLL_TIMEOUT = int(os.getenv("MAX_POLL_TIMEOUT", "25"))
 
 BACKEND_API_URL = os.getenv("BACKEND_API_URL", "http://backend:8000/api/v1").strip().rstrip("/")
 BACKEND_TIMEOUT = int(os.getenv("BACKEND_TIMEOUT", "20"))
-
-ADMIN_IDS = {455587587, 5026580559, 100136652}
+PUBLIC_WEBAPP_URL = os.getenv("PUBLIC_WEBAPP_URL", "").strip()
+ADMIN_IDS = {item.strip() for item in os.getenv("ADMIN_MAX_IDS", "").split(",") if item.strip()}
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 STATE_DATA_FILE = DATA_DIR / "conversation_state.json"
+BOT_HEARTBEAT_FILE = DATA_DIR / "bot_heartbeat.json"
 
 STATE_IDLE = "idle"
 STATE_WAITING_EMAIL = "waiting_email"
@@ -46,16 +48,16 @@ ACTION_BACK_CATEGORY = "back_category"
 ACTION_BACK_TOPIC = "back_topic"
 ACTION_MY_TICKETS = "my_tickets"
 ACTION_CHECK_STATUS = "check_status"
+ACTION_OPEN_APP = "open_app"
 
-
-CONVERSATION_STATE: Dict[str, Dict[str, Any]] = {}
+CONVERSATION_STATE: dict[str, dict[str, Any]] = {}
 
 
 def ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def load_json(path: Path, default: Dict[str, Any]) -> Dict[str, Any]:
+def load_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
     if not path.exists():
         return default
     try:
@@ -65,9 +67,19 @@ def load_json(path: Path, default: Dict[str, Any]) -> Dict[str, Any]:
         return default
 
 
-def save_json(path: Path, payload: Dict[str, Any]) -> None:
+def save_json(path: Path, payload: dict[str, Any]) -> None:
     ensure_data_dir()
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def touch_heartbeat() -> None:
+    save_json(
+        BOT_HEARTBEAT_FILE,
+        {
+            "updated_at": int(time()),
+            "status": "ok",
+        },
+    )
 
 
 def load_state() -> None:
@@ -75,28 +87,28 @@ def load_state() -> None:
     CONVERSATION_STATE = load_json(STATE_DATA_FILE, {})
 
 
-def save_conversation_state() -> None:
+def save_state() -> None:
     save_json(STATE_DATA_FILE, CONVERSATION_STATE)
 
 
-def get_session(user_id: str) -> Dict[str, Any]:
+def get_session(user_id: str) -> dict[str, Any]:
     return CONVERSATION_STATE.setdefault(user_id, {"state": STATE_IDLE, "form": {}})
 
 
 def set_state(user_id: str, state: str) -> None:
     get_session(user_id)["state"] = state
-    save_conversation_state()
+    save_state()
 
 
 def reset_form(user_id: str) -> None:
     session = get_session(user_id)
     session["form"] = {}
-    save_conversation_state()
+    save_state()
 
 
-def build_buttons(options: List[Tuple[str, str]]) -> List[List[Dict[str, str]]]:
-    rows: List[List[Dict[str, str]]] = []
-    row: List[Dict[str, str]] = []
+def build_buttons(options: list[tuple[str, str]]) -> list[list[dict[str, str]]]:
+    rows: list[list[dict[str, str]]] = []
+    row: list[dict[str, str]] = []
     for index, (text, payload) in enumerate(options, start=1):
         row.append({"type": "callback", "text": text, "payload": payload})
         if index % 2 == 0:
@@ -111,7 +123,7 @@ def make_payload(action: str, value: Optional[str] = None) -> str:
     return json.dumps({"action": action, "value": value}, ensure_ascii=False)
 
 
-def parse_payload(raw_payload: Any) -> Dict[str, Any]:
+def parse_payload(raw_payload: Any) -> dict[str, Any]:
     if isinstance(raw_payload, dict):
         return raw_payload
     if isinstance(raw_payload, str):
@@ -126,35 +138,20 @@ def is_valid_email(email: str) -> bool:
     return bool(re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email))
 
 
-def extract_sender(update: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], str]:
+def extract_sender(update: dict[str, Any]) -> tuple[Optional[str], Optional[str], str]:
     message = update.get("message") or {}
     callback = update.get("callback") or {}
     source = callback or message or update
     sender = source.get("sender") or source.get("user") or {}
     recipient = source.get("recipient") or {}
 
-    user_id = (
-        sender.get("user_id")
-        or sender.get("id")
-        or source.get("user_id")
-        or update.get("user_id")
-    )
-    chat_id = (
-        recipient.get("chat_id")
-        or source.get("chat_id")
-        or update.get("chat_id")
-        or user_id
-    )
-    full_name = (
-        sender.get("name")
-        or sender.get("full_name")
-        or source.get("user_name")
-        or "Пользователь MAX"
-    )
-    return str(user_id) if user_id is not None else None, str(chat_id) if chat_id is not None else None, full_name
+    user_id = sender.get("user_id") or sender.get("id") or source.get("user_id") or update.get("user_id")
+    chat_id = recipient.get("chat_id") or source.get("chat_id") or update.get("chat_id") or user_id
+    full_name = sender.get("name") or sender.get("full_name") or source.get("user_name") or "Пользователь MAX"
+    return str(user_id) if user_id is not None else None, str(chat_id) if chat_id is not None else None, str(full_name)
 
 
-def extract_text(update: Dict[str, Any]) -> str:
+def extract_text(update: dict[str, Any]) -> str:
     message = update.get("message") or {}
     body = message.get("body")
     if isinstance(body, dict):
@@ -162,11 +159,22 @@ def extract_text(update: Dict[str, Any]) -> str:
     return (message.get("text") or update.get("text") or "").strip()
 
 
-def extract_callback_data(update: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[str]]:
+def extract_callback_data(update: dict[str, Any]) -> tuple[dict[str, Any], Optional[str]]:
     callback = update.get("callback") or {}
     payload = parse_payload(callback.get("payload"))
     callback_id = callback.get("callback_id") or update.get("callback_id")
     return payload, callback_id
+
+
+def parse_int(value: Any) -> Optional[int]:
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def find_catalog_item(items: list[dict[str, Any]], item_id: int) -> Optional[dict[str, Any]]:
+    return next((item for item in items if item["id"] == item_id), None)
 
 
 class BackendClient:
@@ -175,8 +183,7 @@ class BackendClient:
         self.session: Optional[aiohttp.ClientSession] = None
 
     async def start(self) -> None:
-        timeout = aiohttp.ClientTimeout(total=BACKEND_TIMEOUT)
-        self.session = aiohttp.ClientSession(timeout=timeout)
+        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=BACKEND_TIMEOUT))
 
     async def close(self) -> None:
         if self.session:
@@ -187,14 +194,19 @@ class BackendClient:
         method: str,
         path: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
-        json_body: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
+        params: Optional[dict[str, Any]] = None,
+        json_body: Optional[dict[str, Any]] = None,
+        headers: Optional[dict[str, str]] = None,
     ) -> Any:
         if not self.session:
             raise RuntimeError("Backend session is not initialized")
-        url = f"{self.base_url}{path}"
-        async with self.session.request(method, url, params=params, json=json_body, headers=headers) as response:
+        async with self.session.request(
+            method,
+            f"{self.base_url}{path}",
+            params=params,
+            json=json_body,
+            headers=headers,
+        ) as response:
             text = await response.text()
             if response.status >= 400:
                 raise RuntimeError(f"Backend error {response.status}: {text}")
@@ -205,40 +217,21 @@ class BackendClient:
             except json.JSONDecodeError:
                 return {"raw": text}
 
-    async def bind_email(self, *, max_user_id: str, full_name: str, email: str) -> Dict[str, Any]:
-        return await self.request(
-            "POST",
-            "/auth/bind-email",
-            json_body={"max_user_id": max_user_id, "full_name": full_name, "email": email},
-        )
-
-    async def request_email_code(self, *, max_user_id: str, full_name: str, email: str) -> Dict[str, Any]:
+    async def request_email_code(self, *, max_user_id: str, full_name: str, email: str) -> dict[str, Any]:
         return await self.request(
             "POST",
             "/auth/request-email-code",
             json_body={"max_user_id": max_user_id, "full_name": full_name, "email": email},
         )
 
-    async def verify_email_code(
-        self,
-        *,
-        max_user_id: str,
-        full_name: str,
-        email: str,
-        code: str,
-    ) -> Dict[str, Any]:
+    async def verify_email_code(self, *, max_user_id: str, full_name: str, email: str, code: str) -> dict[str, Any]:
         return await self.request(
             "POST",
             "/auth/verify-email-code",
-            json_body={
-                "max_user_id": max_user_id,
-                "full_name": full_name,
-                "email": email,
-                "code": code,
-            },
+            json_body={"max_user_id": max_user_id, "full_name": full_name, "email": email, "code": code},
         )
 
-    async def get_user(self, max_user_id: str) -> Optional[Dict[str, Any]]:
+    async def get_user(self, max_user_id: str) -> Optional[dict[str, Any]]:
         try:
             return await self.request("GET", f"/users/by-max/{max_user_id}")
         except RuntimeError as exc:
@@ -246,7 +239,7 @@ class BackendClient:
                 return None
             raise
 
-    async def get_catalog(self) -> Dict[str, Any]:
+    async def get_catalog(self) -> dict[str, Any]:
         return await self.request("GET", "/catalog")
 
     async def create_ticket(
@@ -257,7 +250,7 @@ class BackendClient:
         category_id: int,
         topic_id: int,
         description: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return await self.request(
             "POST",
             "/tickets",
@@ -270,22 +263,14 @@ class BackendClient:
             },
         )
 
-    async def list_tickets(self, max_user_id: str) -> List[Dict[str, Any]]:
+    async def list_tickets(self, max_user_id: str) -> list[dict[str, Any]]:
         return await self.request("GET", "/tickets", params={"max_user_id": max_user_id})
 
-    async def get_ticket_status(self, max_user_id: str, external_id: str) -> Dict[str, Any]:
-        return await self.request(
-            "GET",
-            f"/tickets/{external_id}/status",
-            params={"max_user_id": max_user_id},
-        )
+    async def get_ticket_status(self, max_user_id: str, external_id: str) -> dict[str, Any]:
+        return await self.request("GET", f"/tickets/{external_id}/status", params={"max_user_id": max_user_id})
 
-    async def list_users(self, admin_max_user_id: str) -> List[Dict[str, Any]]:
-        return await self.request(
-            "GET",
-            "/admin/users",
-            headers={"X-Max-User-Id": admin_max_user_id},
-        )
+    async def list_users(self, admin_max_user_id: str) -> list[dict[str, Any]]:
+        return await self.request("GET", "/admin/users", headers={"X-Max-User-Id": admin_max_user_id})
 
 
 class MaxBotClient:
@@ -295,15 +280,8 @@ class MaxBotClient:
         self.session: Optional[aiohttp.ClientSession] = None
         self.marker: Optional[str] = None
 
-    @property
-    def headers(self) -> Dict[str, str]:
-        return {
-            "Authorization": self.token,
-            "Content-Type": "application/json",
-        }
-
     async def start(self) -> None:
-        self.session = aiohttp.ClientSession(headers=self.headers)
+        self.session = aiohttp.ClientSession(headers={"Authorization": self.token, "Content-Type": "application/json"})
         me = await self.request("GET", "/me")
         logging.info("MAX bot started: %s", me.get("name") or me.get("user_id") or "unknown")
 
@@ -316,13 +294,12 @@ class MaxBotClient:
         method: str,
         path: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
-        json_body: Optional[Dict[str, Any]] = None,
+        params: Optional[dict[str, Any]] = None,
+        json_body: Optional[dict[str, Any]] = None,
     ) -> Any:
         if not self.session:
             raise RuntimeError("MAX session is not initialized")
-        url = f"{self.base_url}{path}"
-        async with self.session.request(method, url, params=params, json=json_body) as response:
+        async with self.session.request(method, f"{self.base_url}{path}", params=params, json=json_body) as response:
             text = await response.text()
             if response.status >= 400:
                 raise RuntimeError(f"MAX API error {response.status}: {text}")
@@ -333,8 +310,8 @@ class MaxBotClient:
             except json.JSONDecodeError:
                 return {"raw": text}
 
-    async def get_updates(self) -> List[Dict[str, Any]]:
-        params: Dict[str, Any] = {"timeout": MAX_POLL_TIMEOUT}
+    async def get_updates(self) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"timeout": MAX_POLL_TIMEOUT}
         if self.marker:
             params["marker"] = self.marker
         response = await self.request("GET", "/updates", params=params)
@@ -346,21 +323,17 @@ class MaxBotClient:
         chat_id: Optional[str],
         text: str,
         *,
-        buttons: Optional[List[List[Dict[str, str]]]] = None,
+        buttons: Optional[list[list[dict[str, str]]]] = None,
         user_id: Optional[str] = None,
     ) -> None:
-        payload: Dict[str, Any] = {"text": text}
-        params: Dict[str, Any] = {}
+        payload: dict[str, Any] = {"text": text}
+        params: dict[str, Any] = {}
         if user_id:
             params["user_id"] = user_id
         elif chat_id:
             params["chat_id"] = chat_id
-
         if buttons:
-            payload["attachments"] = [{
-                "type": "inline_keyboard",
-                "payload": {"buttons": buttons},
-            }]
+            payload["attachments"] = [{"type": "inline_keyboard", "payload": {"buttons": buttons}}]
 
         try:
             await self.request("POST", "/messages", params=params, json_body=payload)
@@ -374,25 +347,9 @@ class MaxBotClient:
         if not callback_id:
             return
         try:
-            await self.request(
-                "POST",
-                "/answers",
-                params={"callback_id": callback_id},
-                json_body={"notification": "Принято"},
-            )
+            await self.request("POST", "/answers", params={"callback_id": callback_id}, json_body={"notification": "Принято"})
         except Exception:
             logging.exception("Не удалось подтвердить callback %s", callback_id)
-
-
-def find_catalog_item(items: List[Dict[str, Any]], item_id: int) -> Optional[Dict[str, Any]]:
-    return next((item for item in items if item["id"] == item_id), None)
-
-
-def parse_int(value: Any) -> Optional[int]:
-    try:
-        return int(str(value))
-    except (TypeError, ValueError):
-        return None
 
 
 async def show_main_menu(max_client: MaxBotClient, chat_id: str, user_id: str) -> None:
@@ -401,7 +358,9 @@ async def show_main_menu(max_client: MaxBotClient, chat_id: str, user_id: str) -
         ("Мои заявки", make_payload(ACTION_MY_TICKETS)),
         ("Статус заявки", make_payload(ACTION_CHECK_STATUS)),
     ]
-    if int(user_id) in ADMIN_IDS:
+    if PUBLIC_WEBAPP_URL:
+        options.append(("Открыть приложение", make_payload(ACTION_OPEN_APP)))
+    if user_id in ADMIN_IDS:
         options.append(("Отправить сообщение всем", make_payload(ACTION_ADMIN_BROADCAST)))
     await max_client.send_message(chat_id, "Выберите действие:", buttons=build_buttons(options), user_id=user_id)
 
@@ -419,8 +378,8 @@ async def ask_for_email_code(max_client: MaxBotClient, chat_id: str, user_id: st
 async def ask_for_hotel(max_client: MaxBotClient, backend: BackendClient, chat_id: str, user_id: str) -> None:
     reset_form(user_id)
     catalog = await backend.get_catalog()
-    hotels = catalog["hotels"]
-    buttons = build_buttons([(hotel["name"], make_payload("hotel", str(hotel["id"]))) for hotel in hotels if hotel["is_active"]])
+    hotels = [hotel for hotel in catalog["hotels"] if hotel["is_active"]]
+    buttons = build_buttons([(hotel["name"], make_payload("hotel", str(hotel["id"]))) for hotel in hotels])
     await max_client.send_message(chat_id, "Выберите отель:", buttons=buttons, user_id=user_id)
     set_state(user_id, STATE_WAITING_HOTEL)
 
@@ -428,7 +387,7 @@ async def ask_for_hotel(max_client: MaxBotClient, backend: BackendClient, chat_i
 async def ask_for_category(max_client: MaxBotClient, backend: BackendClient, chat_id: str, user_id: str) -> None:
     catalog = await backend.get_catalog()
     categories = [item for item in catalog["categories"] if item["is_active"]]
-    buttons = build_buttons([(category["name"], make_payload("category", str(category["id"]))) for category in categories])
+    buttons = build_buttons([(item["name"], make_payload("category", str(item["id"]))) for item in categories])
     buttons.append([{"type": "callback", "text": "Назад", "payload": make_payload(ACTION_BACK_HOTEL)}])
     await max_client.send_message(chat_id, "Выберите категорию:", buttons=buttons, user_id=user_id)
     set_state(user_id, STATE_WAITING_CATEGORY)
@@ -444,7 +403,7 @@ async def ask_for_topic(max_client: MaxBotClient, backend: BackendClient, chat_i
         await ask_for_hotel(max_client, backend, chat_id, user_id)
         return
     topics = [item for item in category["topics"] if item["is_active"]]
-    buttons = build_buttons([(topic["name"], make_payload("topic", str(topic["id"]))) for topic in topics])
+    buttons = build_buttons([(item["name"], make_payload("topic", str(item["id"]))) for item in topics])
     buttons.append([{"type": "callback", "text": "Назад", "payload": make_payload(ACTION_BACK_CATEGORY)}])
     await max_client.send_message(chat_id, "Выберите тему:", buttons=buttons, user_id=user_id)
     set_state(user_id, STATE_WAITING_TOPIC)
@@ -475,6 +434,7 @@ async def show_user_tickets(max_client: MaxBotClient, backend: BackendClient, ch
         await max_client.send_message(chat_id, "У вас пока нет заявок.", user_id=user_id)
         await show_main_menu(max_client, chat_id, user_id)
         return
+
     lines = ["Ваши заявки:"]
     for ticket in tickets:
         lines.append(f"#{ticket['external_id']} | {ticket.get('current_status') or ticket['status']} | {ticket['subject']}")
@@ -485,10 +445,18 @@ async def show_user_tickets(max_client: MaxBotClient, backend: BackendClient, ch
 async def handle_start(max_client: MaxBotClient, backend: BackendClient, chat_id: str, user_id: str) -> None:
     user = await backend.get_user(user_id)
     if user:
-        await max_client.send_message(chat_id, "Вы уже зарегистрированы.", user_id=user_id)
+        message = "Вы уже зарегистрированы."
+        if PUBLIC_WEBAPP_URL:
+            message += f"\nMini app: {PUBLIC_WEBAPP_URL}"
+        await max_client.send_message(chat_id, message, user_id=user_id)
         await show_main_menu(max_client, chat_id, user_id)
-    else:
-        await ask_for_email(max_client, chat_id, user_id)
+        return
+
+    welcome = "Введите рабочую почту для начала работы."
+    if PUBLIC_WEBAPP_URL:
+        welcome += f"\nИли откройте мини-приложение: {PUBLIC_WEBAPP_URL}"
+    await max_client.send_message(chat_id, welcome, user_id=user_id)
+    set_state(user_id, STATE_WAITING_EMAIL)
 
 
 async def handle_email_input(
@@ -502,10 +470,11 @@ async def handle_email_input(
     if not is_valid_email(text):
         await max_client.send_message(chat_id, "Некорректный email. Попробуйте снова.", user_id=user_id)
         return
+
     session = get_session(user_id)
     session["form"]["pending_email"] = text
     session["form"]["pending_full_name"] = full_name
-    save_conversation_state()
+    save_state()
     try:
         await backend.request_email_code(max_user_id=user_id, full_name=full_name, email=text)
     except Exception as exc:
@@ -530,18 +499,13 @@ async def handle_email_code_input(
         await ask_for_email(max_client, chat_id, user_id)
         return
     try:
-        await backend.verify_email_code(
-            max_user_id=user_id,
-            full_name=full_name,
-            email=email,
-            code=text.strip(),
-        )
+        await backend.verify_email_code(max_user_id=user_id, full_name=full_name, email=email, code=text.strip())
     except Exception as exc:
         await max_client.send_message(chat_id, f"Не удалось подтвердить почту: {exc}", user_id=user_id)
         return
     session["form"].pop("pending_email", None)
     session["form"].pop("pending_full_name", None)
-    save_conversation_state()
+    save_state()
     await ask_for_hotel(max_client, backend, chat_id, user_id)
 
 
@@ -604,8 +568,8 @@ async def handle_admin_broadcast_text(max_client: MaxBotClient, backend: Backend
     try:
         users = await backend.list_users(sender_user_id)
         for user in users:
-            target_id = user["max_user_id"]
-            if str(target_id) == str(sender_user_id):
+            target_id = str(user["max_user_id"])
+            if target_id == str(sender_user_id):
                 continue
             try:
                 await max_client.send_message(target_id, f"Объявление:\n{text}", user_id=target_id)
@@ -625,7 +589,7 @@ async def handle_admin_broadcast_text(max_client: MaxBotClient, backend: Backend
         await show_main_menu(max_client, sender_user_id, sender_user_id)
 
 
-async def handle_callback(max_client: MaxBotClient, backend: BackendClient, update: Dict[str, Any]) -> None:
+async def handle_callback(max_client: MaxBotClient, backend: BackendClient, update: dict[str, Any]) -> None:
     user_id, chat_id, _ = extract_sender(update)
     if not user_id or not chat_id:
         logging.warning("Не удалось определить пользователя для callback: %s", update)
@@ -651,8 +615,15 @@ async def handle_callback(max_client: MaxBotClient, backend: BackendClient, upda
         await ask_for_status_ticket(max_client, chat_id, user_id)
         return
 
+    if action == ACTION_OPEN_APP:
+        if PUBLIC_WEBAPP_URL:
+            await max_client.send_message(chat_id, f"Откройте мини-приложение: {PUBLIC_WEBAPP_URL}", user_id=user_id)
+        else:
+            await max_client.send_message(chat_id, "Ссылка на мини-приложение пока не настроена.", user_id=user_id)
+        return
+
     if action == ACTION_ADMIN_BROADCAST:
-        if int(user_id) not in ADMIN_IDS:
+        if user_id not in ADMIN_IDS:
             await max_client.send_message(chat_id, "Нет прав.", user_id=user_id)
             return
         await max_client.send_message(chat_id, "Введите текст сообщения для рассылки:", user_id=user_id)
@@ -688,7 +659,7 @@ async def handle_callback(max_client: MaxBotClient, backend: BackendClient, upda
         if hotel and hotel["is_active"]:
             session["form"]["hotel_id"] = hotel_id
             session["form"]["hotel_name"] = hotel["name"]
-            save_conversation_state()
+            save_state()
             await ask_for_category(max_client, backend, chat_id, user_id)
         return
 
@@ -700,7 +671,7 @@ async def handle_callback(max_client: MaxBotClient, backend: BackendClient, upda
         if category and category["is_active"]:
             session["form"]["category_id"] = category_id
             session["form"]["category_name"] = category["name"]
-            save_conversation_state()
+            save_state()
             await ask_for_topic(max_client, backend, chat_id, user_id)
         return
 
@@ -714,14 +685,14 @@ async def handle_callback(max_client: MaxBotClient, backend: BackendClient, upda
             if topic:
                 session["form"]["topic_id"] = topic_id
                 session["form"]["topic_name"] = topic["name"]
-                save_conversation_state()
+                save_state()
                 await ask_for_description(max_client, chat_id, user_id)
         return
 
     logging.info("Необработанный callback: %s", payload)
 
 
-async def handle_message(max_client: MaxBotClient, backend: BackendClient, update: Dict[str, Any]) -> None:
+async def handle_message(max_client: MaxBotClient, backend: BackendClient, update: dict[str, Any]) -> None:
     user_id, chat_id, full_name = extract_sender(update)
     if not user_id or not chat_id:
         logging.warning("Не удалось определить пользователя для сообщения: %s", update)
@@ -751,7 +722,7 @@ async def handle_message(max_client: MaxBotClient, backend: BackendClient, updat
         return
 
     if state == STATE_WAITING_ADMIN_BROADCAST:
-        if int(user_id) not in ADMIN_IDS:
+        if user_id not in ADMIN_IDS:
             set_state(user_id, STATE_IDLE)
             await max_client.send_message(chat_id, "Нет прав.", user_id=user_id)
             return
@@ -766,7 +737,7 @@ async def handle_message(max_client: MaxBotClient, backend: BackendClient, updat
     await show_main_menu(max_client, chat_id, user_id)
 
 
-async def dispatch_update(max_client: MaxBotClient, backend: BackendClient, update: Dict[str, Any]) -> None:
+async def dispatch_update(max_client: MaxBotClient, backend: BackendClient, update: dict[str, Any]) -> None:
     update_type = update.get("update_type") or update.get("type")
     if update_type == "message_callback" or update.get("callback"):
         await handle_callback(max_client, backend, update)
@@ -782,18 +753,23 @@ async def run() -> None:
         raise RuntimeError("Не задан MAX_BOT_TOKEN")
 
     load_state()
+    touch_heartbeat()
     max_client = MaxBotClient(MAX_BOT_TOKEN, MAX_API_BASE_URL)
     backend = BackendClient(BACKEND_API_URL)
     await max_client.start()
     await backend.start()
+
     try:
         while True:
             try:
                 updates = await max_client.get_updates()
+                touch_heartbeat()
                 for update in updates:
                     await dispatch_update(max_client, backend, update)
+                    touch_heartbeat()
             except Exception:
                 logging.exception("Ошибка в цикле обработки обновлений")
+                touch_heartbeat()
                 await asyncio.sleep(3)
     finally:
         await backend.close()

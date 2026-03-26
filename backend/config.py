@@ -16,15 +16,20 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_host: str = "0.0.0.0"
     app_port: int = 8000
+    max_bot_token: str = ""
 
     database_url: str = "sqlite:///./data/app.db"
     cors_origins_raw: str = "*"
+    public_domain: str = ""
+    public_webapp_url: str = ""
+    public_api_base_url: str = ""
 
     osticket_api_url: str = ""
     osticket_api_key: str = ""
     osticket_request_timeout: int = 20
     osticket_status_api_url: str = ""
     email_verification_ttl_minutes: int = 10
+    max_webapp_auth_max_age_seconds: int = 86400
 
     smtp_host: str = ""
     smtp_port: int = 587

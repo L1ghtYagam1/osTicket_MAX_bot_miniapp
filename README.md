@@ -114,6 +114,10 @@ MAX_API_BASE_URL=https://platform-api.max.ru
 MAX_POLL_TIMEOUT=25
 BACKEND_API_URL=http://backend:8000/api/v1
 BACKEND_TIMEOUT=20
+PUBLIC_DOMAIN=maxapp.example.com
+PUBLIC_WEBAPP_URL=https://maxapp.example.com/app
+PUBLIC_API_BASE_URL=https://maxapp.example.com/api/v1
+MAX_WEBAPP_AUTH_MAX_AGE_SECONDS=86400
 
 
 # =========================
@@ -232,11 +236,14 @@ notepad .env
 
 ```env
 MAX_BOT_TOKEN=
+PUBLIC_DOMAIN=maxapp.example.com
 OSTICKET_API_URL=https://your-osticket.example/api/tickets.json
 OSTICKET_API_KEY=
 OSTICKET_STATUS_API_URL=
 ADMIN_MAX_IDS=
 ```
+
+`MAX_BOT_TOKEN` используется не только ботом, но и backend для серверной валидации запуска mini app из MAX.
 
 Если проект запускается локально без отдельного reverse proxy, значения по умолчанию для `BACKEND_API_URL` и `DATABASE_URL` можно не менять.
 
@@ -253,18 +260,20 @@ docker-compose ps || docker compose ps
 docker-compose logs -f || docker compose logs -f
 ```
 
+У бота теперь есть собственный healthcheck по heartbeat-файлу, поэтому в `docker compose ps` контейнер `bot` тоже должен быть в состоянии `healthy`.
+
 ### 7. Открыть web UI
 
-После запуска web UI будет доступен по адресу:
+Если настроен домен и DNS уже указывает на сервер, Caddy сам поднимет HTTPS и web UI будет доступен по адресу:
 
 ```text
-http://localhost:8000/app
+https://your-domain/app
 ```
 
-Если проект развернут на сервере, используйте:
+Если домен ещё не настроен, можно временно проверить backend напрямую на сервере:
 
 ```text
-http://YOUR_SERVER_IP:8000/app
+http://YOUR_SERVER_IP:8000/api/v1/health
 ```
 
 ### 8. Остановить проект
@@ -273,6 +282,50 @@ http://YOUR_SERVER_IP:8000/app
 docker-compose down || docker compose down
 ```
 
+## Отдельный домен для mini app в MAX
+
+Рекомендуемая схема доменов:
+
+- `https://maxapp.example.com/app` — mini app для MAX
+- `https://maxapp.example.com/api/v1` — backend API
+- `https://osticket.example.com` — отдельный домен osTicket
+
+Минимальный пример `.env` для такой схемы:
+
+```env
+BACKEND_API_URL=http://backend:8000/api/v1
+PUBLIC_DOMAIN=maxapp.example.com
+PUBLIC_WEBAPP_URL=https://maxapp.example.com/app
+PUBLIC_API_BASE_URL=https://maxapp.example.com/api/v1
+CORS_ORIGINS_RAW=https://maxapp.example.com
+OSTICKET_API_URL=https://osticket.example.com/api/tickets.json
+OSTICKET_STATUS_API_URL=https://osticket.example.com/api/tickets/{ticket_id}.json
+```
+
+Проект уже подготовлен под Caddy. Рабочий конфиг лежит в [deploy/Caddyfile](/C:/Users/132/Desktop/bot/deploy/Caddyfile).
+
+Как это работает:
+
+- Caddy принимает запросы на `80/443`
+- автоматически выпускает и продлевает TLS-сертификат
+- проксирует весь трафик на `backend:8000`
+- backend отдаёт `/app` и `/api/v1/...`
+
+Что уже реализовано в web app:
+
+- mini app можно отдавать с отдельного домена
+- frontend работает через относительные `/api/v1/...`, поэтому домен `app` и `api` может быть один и тот же
+- при открытии из MAX web app пытается подхватить пользователя из `window.WebApp`
+- backend умеет валидировать `initData` mini app на стороне сервера через `MAX_BOT_TOKEN`
+
+Что нужно сделать на стороне MAX:
+
+1. Направить DNS домена на сервер.
+2. Запустить проект с Caddy.
+3. Убедиться, что открывается `https://ваш-домен/app`.
+4. Подключить этот URL в кабинете MAX как mini app.
+5. Проверить открытие `https://ваш-домен/app` внутри клиента MAX.
+
 ## Проверка после запуска
 
 ### Healthcheck backend
@@ -280,7 +333,7 @@ docker-compose down || docker compose down
 Откройте:
 
 ```text
-http://localhost:8000/api/v1/health
+https://your-domain/api/v1/health
 ```
 
 Ожидаемый ответ:
@@ -288,6 +341,16 @@ http://localhost:8000/api/v1/health
 ```json
 {"status":"ok"}
 ```
+
+### Backup SQLite базы
+
+Если используется SQLite, резервную копию можно сделать так:
+
+```bash
+python scripts/backup_db.py
+```
+
+Файл будет сохранён в `data/backups/`.
 
 ### Проверка подтверждения почты
 

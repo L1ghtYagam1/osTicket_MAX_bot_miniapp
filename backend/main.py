@@ -1,6 +1,5 @@
-from pathlib import Path
-
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from .config import get_settings
 from .database import Base, SessionLocal, engine, get_db
+from .max_webapp import validate_init_data
 from .models import Category, Hotel, Topic
 from .schemas import (
     BindEmailRequest,
@@ -33,20 +33,22 @@ from .schemas import (
     UserOut,
     UserUpdateRequest,
     VerifyEmailCodeRequest,
+    WebAppSessionOut,
+    WebAppSessionRequest,
 )
 from .services import (
     bind_user_email,
-    create_ticket,
     create_category_record,
     create_hotel_record,
+    create_ticket,
     create_topic_record,
     enrich_ticket_status,
     enrich_tickets_status,
     get_catalog,
     get_user_by_max_id,
     init_defaults,
-    list_users,
     list_user_tickets,
+    list_users,
     request_email_code,
     require_admin_user,
     update_user,
@@ -134,6 +136,19 @@ async def verify_email_code_endpoint(payload: VerifyEmailCodeRequest, db: Sessio
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return UserOut.model_validate(user)
+
+
+@app.post("/api/v1/auth/webapp-session", response_model=WebAppSessionOut)
+async def webapp_session_endpoint(payload: WebAppSessionRequest) -> WebAppSessionOut:
+    try:
+        webapp_user = validate_init_data(payload.init_data, bot_token=settings.max_bot_token)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return WebAppSessionOut(
+        max_user_id=webapp_user.max_user_id,
+        full_name=webapp_user.full_name,
+        init_data_validated=True,
+    )
 
 
 @app.get("/api/v1/users/by-max/{max_user_id}", response_model=UserOut)
@@ -265,6 +280,22 @@ async def create_topic(payload: TopicCreateRequest, db: Session = Depends(get_db
     return TopicOut.model_validate(topic)
 
 
+@app.put("/api/v1/admin/topics/{topic_id}", response_model=TopicOut, dependencies=[Depends(require_admin)])
+async def update_topic(topic_id: int, payload: TopicUpdateRequest, db: Session = Depends(get_db)) -> TopicOut:
+    topic = db.get(Topic, topic_id)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    category = db.get(Category, payload.category_id)
+    if category is None:
+        raise HTTPException(status_code=404, detail="Category not found")
+    topic.category_id = payload.category_id
+    topic.name = payload.name
+    topic.is_active = payload.is_active
+    db.commit()
+    db.refresh(topic)
+    return TopicOut.model_validate(topic)
+
+
 @app.get("/api/v1/admin/users", response_model=list[UserOut], dependencies=[Depends(require_admin)])
 async def admin_users(db: Session = Depends(get_db)) -> list[UserOut]:
     return [UserOut.model_validate(item) for item in list_users(db)]
@@ -283,19 +314,3 @@ async def admin_update_user(user_id: int, payload: UserUpdateRequest, db: Sessio
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return UserOut.model_validate(user)
-
-
-@app.put("/api/v1/admin/topics/{topic_id}", response_model=TopicOut, dependencies=[Depends(require_admin)])
-async def update_topic(topic_id: int, payload: TopicUpdateRequest, db: Session = Depends(get_db)) -> TopicOut:
-    topic = db.get(Topic, topic_id)
-    if topic is None:
-        raise HTTPException(status_code=404, detail="Topic not found")
-    category = db.get(Category, payload.category_id)
-    if category is None:
-        raise HTTPException(status_code=404, detail="Category not found")
-    topic.category_id = payload.category_id
-    topic.name = payload.name
-    topic.is_active = payload.is_active
-    db.commit()
-    db.refresh(topic)
-    return TopicOut.model_validate(topic)

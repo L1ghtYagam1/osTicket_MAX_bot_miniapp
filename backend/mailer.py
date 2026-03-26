@@ -10,11 +10,7 @@ settings = get_settings()
 
 def send_verification_email(recipient: str, code: str) -> None:
     if not settings.smtp_host or not settings.smtp_sender:
-        logging.warning(
-            "SMTP is not configured. Verification code for %s: %s",
-            recipient,
-            code,
-        )
+        logging.warning("SMTP is not configured. Verification code for %s: %s", recipient, code)
         return
 
     message = EmailMessage()

@@ -22,6 +22,16 @@ class VerifyEmailCodeRequest(BaseModel):
     code: str = Field(min_length=4, max_length=16)
 
 
+class WebAppSessionRequest(BaseModel):
+    init_data: str = Field(min_length=1)
+
+
+class WebAppSessionOut(BaseModel):
+    max_user_id: str
+    full_name: str
+    init_data_validated: bool
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
