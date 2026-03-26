@@ -170,7 +170,7 @@ SMTP_USERNAME=
 SMTP_PASSWORD=
 SMTP_SENDER=
 SMTP_USE_TLS=true
-ALLOWED_EMAIL_DOMAINS=ukprovence.ru
+ALLOWED_EMAIL_DOMAINS=ukprovence.ru,hotel-a.ru,hotel-b.ru
 ```
 
 ## Установка через Docker
