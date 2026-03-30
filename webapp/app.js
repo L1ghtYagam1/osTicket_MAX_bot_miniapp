@@ -90,6 +90,10 @@ const api = {
     return this.request(`/api/v1/tickets?max_user_id=${encodeURIComponent(maxUserId)}`);
   },
 
+  getTicketDetails(maxUserId, externalId) {
+    return this.request(`/api/v1/tickets/${encodeURIComponent(externalId)}?max_user_id=${encodeURIComponent(maxUserId)}`);
+  },
+
   createTicket(payload) {
     return this.request("/api/v1/tickets", {
       method: "POST",
@@ -613,11 +617,62 @@ function renderTickets(tickets) {
         <span>${ticket.current_status}</span>
       </div>
       <div>${ticket.subject}</div>
+      <div class="ticket-actions">
+        <button class="primary full-width" onclick="openTicketDetails('${ticket.external_id}')">РћС‚РєСЂС‹С‚СЊ</button>
+      </div>
       <div class="list-meta">${ticket.description}</div>
       ${ticket.is_shared ? `<div class="list-meta">Владелец: ${ticket.owner_full_name || ticket.owner_work_email}</div>` : ""}
     </div>
   `).join("") || `<div class="list-item">Заявок пока нет.</div>`;
 }
+
+function closeTicketDetails() {
+  byId("ticketDetailsCard").hidden = true;
+  byId("ticketDetailsTitle").textContent = "Р—Р°СЏРІРєР°";
+  byId("ticketDetailsMeta").textContent = "";
+  byId("ticketDetailsDescription").textContent = "";
+  byId("ticketThreadList").innerHTML = "";
+}
+
+function renderTicketThread(thread) {
+  if (!thread.length) {
+    return `<div class="list-item">РџРѕРґСЂРѕР±РЅРѕСЃС‚Рё РїРѕ osTicket РїРѕРєР° РЅРµРґРѕСЃС‚СѓРїРЅС‹.</div>`;
+  }
+
+  return thread.map((entry) => `
+    <div class="list-item thread-entry">
+      <div class="list-head">
+        <span>${entry.title || entry.author || "РЎРѕРѕР±С‰РµРЅРёРµ"}</span>
+        <span>${entry.created_at || entry.entry_type || ""}</span>
+      </div>
+      ${entry.author ? `<div class="list-meta">${entry.author}</div>` : ""}
+      <div class="ticket-description">${entry.body}</div>
+    </div>
+  `).join("");
+}
+
+window.openTicketDetails = async function openTicketDetails(externalId) {
+  setSession();
+  const card = byId("ticketDetailsCard");
+  const meta = byId("ticketDetailsMeta");
+  const description = byId("ticketDetailsDescription");
+  const threadRoot = byId("ticketThreadList");
+  byId("ticketDetailsTitle").textContent = `Р—Р°СЏРІРєР° #${externalId}`;
+  meta.textContent = "Р—Р°РіСЂСѓР·РєР°...";
+  description.textContent = "";
+  threadRoot.innerHTML = "";
+  card.hidden = false;
+
+  try {
+    const data = await api.getTicketDetails(state.maxUserId, externalId);
+    byId("ticketDetailsTitle").textContent = `${data.subject} #${data.external_id}`;
+    meta.textContent = `РЎС‚Р°С‚СѓСЃ: ${data.current_status}${data.owner_full_name ? ` | Р’Р»Р°РґРµР»РµС†: ${data.owner_full_name}` : ""}`;
+    description.textContent = data.description || "";
+    threadRoot.innerHTML = renderTicketThread(data.thread || []);
+  } catch (error) {
+    meta.textContent = error.message;
+  }
+};
 
 async function refreshTickets() {
   setSession();
@@ -988,6 +1043,7 @@ async function init() {
   byId("bindEmailBtn").addEventListener("click", bindEmail);
   byId("createTicketBtn").addEventListener("click", createTicket);
   byId("refreshTicketsBtn").addEventListener("click", refreshTickets);
+  byId("closeTicketDetailsBtn").addEventListener("click", closeTicketDetails);
   byId("categorySelect").addEventListener("change", fillTopics);
   byId("addHotelBtn").addEventListener("click", addHotel);
   byId("addCategoryBtn").addEventListener("click", addCategory);

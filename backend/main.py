@@ -36,6 +36,7 @@ from .schemas import (
     RequestEmailCodeRequest,
     UploadedAssetOut,
     TicketCreateRequest,
+    TicketDetailsOut,
     TicketStatusNotificationOut,
     TicketOut,
     TicketStatusOut,
@@ -63,6 +64,7 @@ from .services import (
     get_app_ui_settings,
     get_integration_settings,
     get_catalog,
+    get_ticket_details,
     get_user_by_max_id,
     init_defaults,
     list_user_tickets,
@@ -293,6 +295,15 @@ async def create_ticket_endpoint(payload: TicketCreateRequest, db: Session = Dep
 async def list_tickets(max_user_id: str, db: Session = Depends(get_db)) -> list[TicketOut]:
     tickets = await enrich_tickets_status(db, list_user_tickets(db, max_user_id))
     return [TicketOut.model_validate(item) for item in tickets]
+
+
+@app.get("/api/v1/tickets/{external_id}", response_model=TicketDetailsOut)
+async def get_ticket_details_endpoint(external_id: str, max_user_id: str, db: Session = Depends(get_db)) -> TicketDetailsOut:
+    try:
+        details = await get_ticket_details(db, max_user_id, external_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return TicketDetailsOut.model_validate(details)
 
 
 @app.get("/api/v1/tickets/{external_id}/status", response_model=TicketStatusOut)

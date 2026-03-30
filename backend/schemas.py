@@ -223,6 +223,30 @@ class TicketOut(BaseModel):
     updated_at: datetime
 
 
+class TicketThreadEntryOut(BaseModel):
+    title: str
+    body: str
+    author: str
+    created_at: str
+    entry_type: str
+
+
+class TicketDetailsOut(BaseModel):
+    id: int
+    external_id: str
+    subject: str
+    description: str
+    status: str
+    current_status: str
+    owner_max_user_id: str
+    owner_full_name: str
+    owner_work_email: str
+    is_shared: bool
+    created_at: datetime
+    updated_at: datetime
+    thread: list[TicketThreadEntryOut] = []
+
+
 class HealthOut(BaseModel):
     status: str
 

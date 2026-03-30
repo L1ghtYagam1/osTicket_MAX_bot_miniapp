@@ -25,7 +25,7 @@ from .models import (
     User,
     UserTicketViewPermission,
 )
-from .osticket import OsTicketClient
+from .osticket import OsTicketClient, extract_extended_thread_entries
 
 
 settings = get_settings()
@@ -519,6 +519,42 @@ def list_user_tickets(db: Session, max_user_id: str) -> list[Ticket]:
         ticket.owner_work_email = ticket.user.work_email  # type: ignore[attr-defined]
         ticket.is_shared = ticket.user_id != user.id  # type: ignore[attr-defined]
     return tickets
+
+
+def get_user_ticket(db: Session, max_user_id: str, external_id: str) -> Ticket:
+    ticket = next((item for item in list_user_tickets(db, max_user_id) if item.external_id == external_id), None)
+    if ticket is None:
+        raise ValueError("Ticket not found")
+    return ticket
+
+
+async def get_ticket_details(db: Session, max_user_id: str, external_id: str) -> dict:
+    ticket = await enrich_ticket_status(db, get_user_ticket(db, max_user_id, external_id))
+    details = {
+        "id": ticket.id,
+        "external_id": ticket.external_id,
+        "subject": ticket.subject,
+        "description": ticket.description,
+        "status": ticket.status,
+        "current_status": ticket.current_status,
+        "owner_max_user_id": ticket.owner_max_user_id,
+        "owner_full_name": ticket.owner_full_name,
+        "owner_work_email": ticket.owner_work_email,
+        "is_shared": ticket.is_shared,
+        "created_at": ticket.created_at,
+        "updated_at": ticket.updated_at,
+        "thread": [],
+    }
+
+    if is_extended_api_enabled(db):
+        try:
+            extended = await osticket_client.get_extended_ticket_details(ticket.external_id)
+            details["subject"] = str(extended.get("subject") or extended.get("title") or details["subject"])
+            details["thread"] = extract_extended_thread_entries(extended)
+        except Exception:
+            pass
+
+    return details
 
 
 async def enrich_ticket_status(db: Session, ticket: Ticket) -> Ticket:

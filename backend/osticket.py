@@ -112,6 +112,77 @@ def extract_extended_ticket(payload: Any) -> dict[str, Any]:
     return {}
 
 
+def extract_extended_thread_entries(ticket_payload: dict[str, Any]) -> list[dict[str, str]]:
+    candidates = (
+        ticket_payload.get("thread"),
+        ticket_payload.get("entries"),
+        ticket_payload.get("messages"),
+        ticket_payload.get("responses"),
+    )
+    raw_entries: list[Any] = []
+    for candidate in candidates:
+        if isinstance(candidate, list):
+            raw_entries = candidate
+            break
+
+    thread: list[dict[str, str]] = []
+    for item in raw_entries:
+        if not isinstance(item, dict):
+            continue
+        body = ""
+        for key in ("body", "message", "text", "response", "content"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                body = value.strip()
+                break
+        if not body:
+            continue
+
+        title = ""
+        for key in ("title", "subject", "header"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                title = value.strip()
+                break
+
+        author = ""
+        for key in ("author", "name", "poster", "staff", "user"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                author = value.strip()
+                break
+            if isinstance(value, dict):
+                nested = value.get("name") or value.get("full_name") or value.get("email")
+                if isinstance(nested, str) and nested.strip():
+                    author = nested.strip()
+                    break
+
+        created_at = ""
+        for key in ("created_at", "created", "timestamp", "date", "updated_at"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                created_at = value.strip()
+                break
+
+        entry_type = ""
+        for key in ("type", "entry_type", "kind"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                entry_type = value.strip()
+                break
+
+        thread.append(
+            {
+                "title": title,
+                "body": body,
+                "author": author,
+                "created_at": created_at,
+                "entry_type": entry_type,
+            }
+        )
+    return thread
+
+
 def normalize_extended_status(ticket_payload: dict[str, Any]) -> str:
     for key in ("status", "state", "ticket_status", "ticketState"):
         value = ticket_payload.get(key)
