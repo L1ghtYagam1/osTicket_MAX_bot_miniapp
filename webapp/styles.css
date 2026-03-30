@@ -262,6 +262,52 @@ input, select, textarea {
   margin: 16px 0;
 }
 
+.ticket-view-hero {
+  margin: 16px 0 18px;
+}
+
+.ticket-view-toolbar {
+  align-items: flex-start;
+}
+
+.ticket-view-kicker {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ticket-view-grid {
+  align-items: start;
+}
+
+.ticket-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.ticket-meta-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.ticket-meta-label {
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ticket-meta-value {
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .ticket-description {
   margin: 12px 0 16px;
   white-space: pre-wrap;
@@ -298,5 +344,9 @@ input, select, textarea {
   .card {
     border-radius: 18px;
     padding: 18px;
+  }
+
+  .ticket-meta-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }

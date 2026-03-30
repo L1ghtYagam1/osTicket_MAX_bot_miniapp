@@ -632,6 +632,9 @@ function closeTicketDetails() {
   byId("ticketDetailsPageMeta").textContent = "";
   byId("ticketDetailsPageDescription").textContent = "";
   byId("ticketThreadPageList").innerHTML = "";
+  byId("ticketDetailsPageMetaCards").innerHTML = "";
+  byId("ticketDetailsPageDescriptionCard").textContent = "";
+  byId("ticketThreadPageListCard").innerHTML = "";
   activateTab("tickets");
 }
 
@@ -657,20 +660,46 @@ window.openTicketDetails = async function openTicketDetails(externalId) {
   const meta = byId("ticketDetailsPageMeta");
   const description = byId("ticketDetailsPageDescription");
   const threadRoot = byId("ticketThreadPageList");
+  const metaCards = byId("ticketDetailsPageMetaCards");
+  const descriptionCard = byId("ticketDetailsPageDescriptionCard");
+  const threadCard = byId("ticketThreadPageListCard");
   byId("ticketDetailsPageTitle").textContent = `Заявка #${externalId}`;
   byId("ticketDetailsPageInnerTitle").textContent = `Заявка #${externalId}`;
   meta.textContent = "Р—Р°РіСЂСѓР·РєР°...";
   description.textContent = "";
   threadRoot.innerHTML = "";
+  metaCards.innerHTML = "";
+  descriptionCard.textContent = "";
+  threadCard.innerHTML = "";
   activateTab("ticket-view");
 
   try {
     const data = await api.getTicketDetails(state.maxUserId, externalId);
     byId("ticketDetailsPageTitle").textContent = `${data.subject} #${data.external_id}`;
     byId("ticketDetailsPageInnerTitle").textContent = `${data.subject} #${data.external_id}`;
-    meta.textContent = `РЎС‚Р°С‚СѓСЃ: ${data.current_status}${data.owner_full_name ? ` | Р’Р»Р°РґРµР»РµС†: ${data.owner_full_name}` : ""}`;
+    meta.textContent = "";
+    metaCards.innerHTML = `
+      <div class="ticket-meta-card">
+        <div class="ticket-meta-label">Номер</div>
+        <div class="ticket-meta-value">#${data.external_id}</div>
+      </div>
+      <div class="ticket-meta-card">
+        <div class="ticket-meta-label">Статус</div>
+        <div class="ticket-meta-value">${data.current_status}</div>
+      </div>
+      <div class="ticket-meta-card">
+        <div class="ticket-meta-label">Тема</div>
+        <div class="ticket-meta-value">${data.subject}</div>
+      </div>
+      <div class="ticket-meta-card">
+        <div class="ticket-meta-label">Владелец</div>
+        <div class="ticket-meta-value">${data.owner_full_name || data.owner_work_email || "-"}</div>
+      </div>
+    `;
     description.textContent = data.description || "";
     threadRoot.innerHTML = renderTicketThread(data.thread || []);
+    descriptionCard.textContent = data.description || "Описание не указано.";
+    threadCard.innerHTML = renderTicketThread(data.thread || []);
   } catch (error) {
     meta.textContent = error.message;
   }
