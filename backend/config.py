@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_sender: str = ""
     smtp_use_tls: bool = True
+    smtp_use_ssl: bool = False
 
     allowed_email_domains_raw: str = Field(default="", alias="ALLOWED_EMAIL_DOMAINS")
     admin_max_ids_raw: str = Field(default="", alias="ADMIN_MAX_IDS")

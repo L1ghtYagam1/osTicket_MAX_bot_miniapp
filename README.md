@@ -165,11 +165,12 @@ EMAIL_VERIFICATION_TTL_MINUTES=10
 # =========================
 
 SMTP_HOST=
-SMTP_PORT=587
+SMTP_PORT=465
 SMTP_USERNAME=
 SMTP_PASSWORD=
 SMTP_SENDER=
-SMTP_USE_TLS=true
+SMTP_USE_TLS=false
+SMTP_USE_SSL=true
 ALLOWED_EMAIL_DOMAINS=ukprovence.ru,hotel-a.ru,hotel-b.ru
 ```
 
@@ -259,6 +260,7 @@ ADMIN_MAX_IDS=
 `MAX_SESSION_TTL_SECONDS=0` означает бессрочную web-сессию: пользователь подтверждает рабочую почту один раз и потом не входит повторно, пока не очищен браузер, не сменён `MAX_SESSION_SECRET` или доступ не отозван вручную.
 `INTERNAL_API_TOKEN` используется ботом и backend для доставки уведомлений о смене статусов. Тоже задайте длинным случайным значением.
 `ALLOWED_EMAIL_DOMAINS` ограничивает подтверждение только рабочими почтами компании. Укажите один или несколько доменов через запятую, например `ukprovence.ru,hotel-a.ru,hotel-b.ru`.
+Для корпоративной почты Mail/VK WorkMail через `e.mail.ru` обычно используется `smtp.mail.ru`, порт `465`, `SMTP_USE_SSL=true`, `SMTP_USE_TLS=false`. Для внешнего приложения лучше использовать пароль приложения, а не обычный пароль от ящика.
 
 Если проект запускается локально без отдельного reverse proxy, значения по умолчанию для `BACKEND_API_URL` и `DATABASE_URL` можно не менять.
 

@@ -22,8 +22,13 @@ def send_verification_email(recipient: str, code: str) -> None:
         f"Код действует {settings.email_verification_ttl_minutes} минут."
     )
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as server:
-        if settings.smtp_use_tls:
+    if settings.smtp_use_ssl:
+        server_factory = smtplib.SMTP_SSL
+    else:
+        server_factory = smtplib.SMTP
+
+    with server_factory(settings.smtp_host, settings.smtp_port, timeout=20) as server:
+        if settings.smtp_use_tls and not settings.smtp_use_ssl:
             server.starttls()
         if settings.smtp_username:
             server.login(settings.smtp_username, settings.smtp_password)
