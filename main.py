@@ -95,7 +95,7 @@ def save_state() -> None:
 
 
 def get_session(user_id: str) -> dict[str, Any]:
-    return CONVERSATION_STATE.setdefault(user_id, {"state": STATE_IDLE, "form": {}})
+    return CONVERSATION_STATE.setdefault(user_id, {"state": STATE_IDLE, "form": {}, "flags": {}})
 
 
 def set_state(user_id: str, state: str) -> None:
@@ -106,6 +106,7 @@ def set_state(user_id: str, state: str) -> None:
 def reset_form(user_id: str) -> None:
     session = get_session(user_id)
     session["form"] = {}
+    session["flags"] = {}
     save_state()
 
 
@@ -539,6 +540,17 @@ async def handle_description_input(
 ) -> None:
     session = get_session(user_id)
     form = session["form"]
+    flags = session.setdefault("flags", {})
+    if flags.get("ticket_submit_in_progress"):
+        await max_client.send_message(
+            chat_id,
+            "Р—Р°СЏРІРєР° СѓР¶Рµ РѕС‚РїСЂР°РІР»СЏРµС‚СЃСЏ. РџРѕРґРѕР¶РґРёС‚Рµ РЅРµСЃРєРѕР»СЊРєРѕ СЃРµРєСѓРЅРґ.",
+            user_id=user_id,
+        )
+        return
+
+    flags["ticket_submit_in_progress"] = True
+    save_state()
     try:
         ticket = await backend.create_ticket(
             max_user_id=user_id,
@@ -548,11 +560,15 @@ async def handle_description_input(
             description=text,
         )
     except Exception as exc:
+        flags["ticket_submit_in_progress"] = False
+        save_state()
         set_state(user_id, STATE_IDLE)
         await max_client.send_message(chat_id, f"Не удалось отправить заявку: {exc}", user_id=user_id)
         await show_main_menu(max_client, chat_id, user_id)
         return
 
+    flags["ticket_submit_in_progress"] = False
+    save_state()
     set_state(user_id, STATE_IDLE)
     buttons = build_buttons([("Новая заявка", make_payload(ACTION_NEW_REQUEST))])
     await max_client.send_message(

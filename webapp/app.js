@@ -570,10 +570,18 @@ function resetCreateFormVisibility() {
 async function createTicket() {
   setSession();
   const result = byId("createResult");
+  const submitButton = byId("createTicketBtn");
   if (!state.maxUserId) {
     result.textContent = "Сначала сохраните MAX User ID.";
     return;
   }
+  if (submitButton.dataset.busy === "1") {
+    return;
+  }
+
+  submitButton.dataset.busy = "1";
+  submitButton.disabled = true;
+  result.textContent = "";
 
   try {
     const data = await api.createTicket({
@@ -590,6 +598,9 @@ async function createTicket() {
     byId("descriptionInput").value = "";
   } catch (error) {
     result.textContent = error.message;
+  } finally {
+    submitButton.disabled = false;
+    submitButton.dataset.busy = "0";
   }
 }
 

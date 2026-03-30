@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     max_session_ttl_seconds: int = 0
     internal_api_token: str = ""
     ticket_status_poll_interval_seconds: int = 60
+    ticket_dedup_seconds: int = 30
 
     smtp_host: str = ""
     smtp_port: int = 587

@@ -445,6 +445,25 @@ async def create_ticket(
     if topic.category_id != category.id:
         raise ValueError("Тема не принадлежит выбранной категории")
 
+    dedup_from = datetime.now(timezone.utc) - timedelta(seconds=settings.ticket_dedup_seconds)
+    recent_ticket = db.scalar(
+        select(Ticket)
+        .options(selectinload(Ticket.user))
+        .where(Ticket.user_id == user.id)
+        .where(Ticket.hotel_id == hotel.id)
+        .where(Ticket.category_id == category.id)
+        .where(Ticket.topic_id == topic.id)
+        .where(Ticket.description == description)
+        .where(Ticket.created_at >= dedup_from)
+        .order_by(Ticket.created_at.desc())
+    )
+    if recent_ticket is not None:
+        recent_ticket.owner_max_user_id = user.max_user_id  # type: ignore[attr-defined]
+        recent_ticket.owner_full_name = user.full_name or user.work_email  # type: ignore[attr-defined]
+        recent_ticket.owner_work_email = user.work_email  # type: ignore[attr-defined]
+        recent_ticket.is_shared = False  # type: ignore[attr-defined]
+        return recent_ticket
+
     external_id = await osticket_client.create_ticket(
         full_name=user.full_name or user.work_email,
         email=user.work_email,
