@@ -217,6 +217,10 @@ def get_integration_settings(db: Session) -> IntegrationSettings:
         db.add(settings_row)
         db.commit()
         db.refresh(settings_row)
+    elif not settings_row.plugin_label or settings_row.plugin_label == "Extended osTicket API":
+        settings_row.plugin_label = "API Endpoints"
+        db.commit()
+        db.refresh(settings_row)
     return settings_row
 
 

@@ -62,7 +62,7 @@ class IntegrationSettings(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     extended_api_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
-    plugin_label: Mapped[str] = mapped_column(String(255), default="Extended osTicket API")
+    plugin_label: Mapped[str] = mapped_column(String(255), default="API Endpoints")
 
 
 class Hotel(Base, TimestampMixin):

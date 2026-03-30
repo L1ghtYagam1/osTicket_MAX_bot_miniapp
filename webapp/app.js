@@ -264,7 +264,7 @@ function applyThemeSettings() {
 function applyIntegrationSettings() {
   const settings = state.integrationSettings;
   if (!settings) return;
-  byId("pluginLabelInput").value = settings.plugin_label || "Extended osTicket API";
+  byId("pluginLabelInput").value = settings.plugin_label || "API Endpoints";
   byId("extendedApiEnabledInput").checked = Boolean(settings.extended_api_enabled);
 }
 
@@ -681,7 +681,7 @@ async function saveIntegrationSettings() {
   try {
     state.integrationSettings = await api.adminUpdateIntegrationSettings({
       extended_api_enabled: byId("extendedApiEnabledInput").checked,
-      plugin_label: byId("pluginLabelInput").value.trim() || "Extended osTicket API",
+      plugin_label: byId("pluginLabelInput").value.trim() || "API Endpoints",
     });
     applyIntegrationSettings();
     result.textContent = "Настройки интеграции сохранены.";

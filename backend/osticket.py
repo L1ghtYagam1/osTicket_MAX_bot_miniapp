@@ -206,52 +206,73 @@ class OsTicketClient:
             raise RuntimeError("Timeout while reading ticket status from osTicket") from exc
 
     async def get_extended_ticket_details(self, external_ticket_id: str) -> dict[str, Any]:
-        payload = {
-            "query": "ticket",
-            "condition": "specific",
-            "ticket_id": self._numeric_ticket_id(external_ticket_id),
-        }
-        data = await self._call_extended_api(payload)
+        data = await self._call_extended_api(
+            "GET",
+            f"/tickets-get.php/{self._numeric_ticket_id(external_ticket_id)}",
+        )
         ticket = extract_extended_ticket(data)
         if not ticket:
             raise RuntimeError("Extended API ticket details not found")
         return ticket
 
     async def reply_to_ticket(self, external_ticket_id: str, *, message: str) -> dict[str, Any]:
-        payload = {
-            "query": "ticket",
-            "condition": "reply",
-            "ticket_id": self._numeric_ticket_id(external_ticket_id),
-            "response": message,
-            "staff_id": settings.osticket_extended_api_staff_id,
-        }
-        return await self._call_extended_api(payload)
+        return await self._call_extended_api(
+            "PATCH",
+            f"/tickets/{self._numeric_ticket_id(external_ticket_id)}",
+            payload={
+                "reply": message,
+                "message": message,
+            },
+        )
 
     async def change_ticket_status(self, external_ticket_id: str, *, status_id: int, body: str = "") -> dict[str, Any]:
-        payload = {
-            "query": "ticket",
-            "condition": "close",
-            "ticket_id": self._numeric_ticket_id(external_ticket_id),
+        payload: dict[str, Any] = {
             "status_id": status_id,
-            "staff_id": settings.osticket_extended_api_staff_id,
-            "response": body,
+            "status": status_id,
         }
-        return await self._call_extended_api(payload)
+        if body:
+            payload["reply"] = body
+            payload["message"] = body
+        return await self._call_extended_api(
+            "PATCH",
+            f"/tickets/{self._numeric_ticket_id(external_ticket_id)}",
+            payload=payload,
+        )
 
-    async def _call_extended_api(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def search_tickets(self, *, email: str | None = None, status: str | None = None, query: str | None = None) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if email:
+            params["email"] = email
+        if status:
+            params["status"] = status
+        if query:
+            params["query"] = query
+        return await self._call_extended_api("GET", "/tickets-search.php", params=params)
+
+    async def _call_extended_api(
+        self,
+        method: str,
+        path: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         if not settings.osticket_extended_api_url:
             raise RuntimeError("OSTICKET_EXTENDED_API_URL is not configured")
         if not settings.osticket_api_key:
             raise RuntimeError("OSTICKET_API_KEY is not configured")
 
+        base_url = settings.osticket_extended_api_url.rstrip("/")
+        url = f"{base_url}{path}"
         headers = {
+            "X-API-Key": settings.osticket_api_key,
             "apikey": settings.osticket_api_key,
             "Content-Type": "application/json",
         }
 
         try:
             async with aiohttp.ClientSession(timeout=self.timeout) as session:
-                async with session.post(settings.osticket_extended_api_url, headers=headers, json=payload) as response:
+                async with session.request(method, url, headers=headers, json=payload, params=params) as response:
                     body = await response.text()
                     if response.status >= 400:
                         raise RuntimeError(f"Extended osTicket API error {response.status}: {body}")
