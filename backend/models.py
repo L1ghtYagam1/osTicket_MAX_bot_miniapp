@@ -39,6 +39,16 @@ class AppSettings(Base, TimestampMixin):
     brand_icon_url: Mapped[str] = mapped_column(String(1000), default="")
 
 
+class AppThemeSettings(Base, TimestampMixin):
+    __tablename__ = "app_theme_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    background_color: Mapped[str] = mapped_column(String(32), default="#f4efe7")
+    card_color: Mapped[str] = mapped_column(String(32), default="#fffaf2")
+    accent_color: Mapped[str] = mapped_column(String(32), default="#0e7a6d")
+    button_color: Mapped[str] = mapped_column(String(32), default="#169c8b")
+
+
 class Hotel(Base, TimestampMixin):
     __tablename__ = "hotels"
 

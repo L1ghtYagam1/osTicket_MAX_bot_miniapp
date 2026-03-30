@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 from .config import get_settings
 from .defaults import DEFAULT_CATEGORIES, DEFAULT_HOTELS
 from .mailer import send_verification_email
-from .models import AdminAuditLog, AppSettings, Category, EmailVerification, Hotel, Ticket, TicketStatusNotification, Topic, User
+from .models import AdminAuditLog, AppSettings, AppThemeSettings, Category, EmailVerification, Hotel, Ticket, TicketStatusNotification, Topic, User
 from .osticket import OsTicketClient
 
 
@@ -21,6 +21,8 @@ osticket_client = OsTicketClient()
 def init_defaults(db: Session) -> None:
     if db.get(AppSettings, 1) is None:
         db.add(AppSettings(id=1))
+    if db.get(AppThemeSettings, 1) is None:
+        db.add(AppThemeSettings(id=1))
 
     if not db.scalar(select(Hotel.id).limit(1)):
         for hotel_name in DEFAULT_HOTELS:
@@ -178,6 +180,34 @@ def update_app_settings(
     settings_row.brand_subtitle = brand_subtitle
     settings_row.brand_mark = brand_mark
     settings_row.brand_icon_url = brand_icon_url
+    db.commit()
+    db.refresh(settings_row)
+    return settings_row
+
+
+def get_app_theme_settings(db: Session) -> AppThemeSettings:
+    settings_row = db.get(AppThemeSettings, 1)
+    if settings_row is None:
+        settings_row = AppThemeSettings(id=1)
+        db.add(settings_row)
+        db.commit()
+        db.refresh(settings_row)
+    return settings_row
+
+
+def update_app_theme_settings(
+    db: Session,
+    *,
+    background_color: str,
+    card_color: str,
+    accent_color: str,
+    button_color: str,
+) -> AppThemeSettings:
+    settings_row = get_app_theme_settings(db)
+    settings_row.background_color = background_color
+    settings_row.card_color = card_color
+    settings_row.accent_color = accent_color
+    settings_row.button_color = button_color
     db.commit()
     db.refresh(settings_row)
     return settings_row

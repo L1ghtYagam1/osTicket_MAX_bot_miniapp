@@ -5,6 +5,7 @@ const state = {
   isAdmin: false,
   user: null,
   appSettings: null,
+  appThemeSettings: null,
   catalog: null,
   webAppReady: false,
 };
@@ -66,6 +67,10 @@ const api = {
 
   getAppSettings() {
     return this.request("/api/v1/app-settings");
+  },
+
+  getAppThemeSettings() {
+    return this.request("/api/v1/app-theme-settings");
   },
 
   getUserByMaxId(maxUserId) {
@@ -158,6 +163,13 @@ const api = {
       body: JSON.stringify(payload),
     });
   },
+
+  adminUpdateAppThemeSettings(payload) {
+    return this.request("/api/v1/admin/app-theme-settings", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
 };
 
 function byId(id) {
@@ -189,6 +201,21 @@ function applyBranding() {
   if (byId("brandSubtitleInput")) byId("brandSubtitleInput").value = settings.brand_subtitle || "";
   if (byId("brandMarkInput")) byId("brandMarkInput").value = settings.brand_mark || "";
   if (byId("brandIconUrlInput")) byId("brandIconUrlInput").value = settings.brand_icon_url || "";
+}
+
+function applyThemeSettings() {
+  const theme = state.appThemeSettings;
+  if (!theme) return;
+
+  document.documentElement.style.setProperty("--bg", theme.background_color || "#f4efe7");
+  document.documentElement.style.setProperty("--card", theme.card_color || "#fffaf2");
+  document.documentElement.style.setProperty("--accent", theme.accent_color || "#0e7a6d");
+  document.documentElement.style.setProperty("--button", theme.button_color || "#169c8b");
+
+  if (byId("backgroundColorInput")) byId("backgroundColorInput").value = theme.background_color || "";
+  if (byId("cardColorInput")) byId("cardColorInput").value = theme.card_color || "";
+  if (byId("accentColorInput")) byId("accentColorInput").value = theme.accent_color || "";
+  if (byId("buttonColorInput")) byId("buttonColorInput").value = theme.button_color || "";
 }
 
 function updateAdminVisibility() {
@@ -572,6 +599,32 @@ async function saveBrandingSettings() {
   }
 }
 
+async function saveThemeSettings() {
+  const result = byId("themeResult");
+  try {
+    const data = await api.adminUpdateAppThemeSettings({
+      background_color: byId("backgroundColorInput").value.trim(),
+      card_color: byId("cardColorInput").value.trim(),
+      accent_color: byId("accentColorInput").value.trim(),
+      button_color: byId("buttonColorInput").value.trim(),
+    });
+    state.appThemeSettings = data;
+    applyThemeSettings();
+    result.textContent = "Цвета интерфейса сохранены.";
+  } catch (error) {
+    result.textContent = error.message;
+  }
+}
+
+function activateAdminTab(tab) {
+  document.querySelectorAll(".subnav-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.adminTab === tab);
+  });
+  document.querySelectorAll(".admin-subpanel").forEach((panel) => {
+    panel.classList.toggle("active", panel.id === `admin-panel-${tab}`);
+  });
+}
+
 function resetCreateFormVisibility() {
   byId("createFormCard").hidden = false;
   byId("createHintCard").hidden = !Boolean(state.appSettings && state.appSettings.brand_subtitle);
@@ -670,7 +723,9 @@ async function addTopic() {
 
 async function init() {
   state.appSettings = await api.getAppSettings();
+  state.appThemeSettings = await api.getAppThemeSettings();
   applyBranding();
+  applyThemeSettings();
   hydrateSession();
   await validateStoredSession();
   await hydrateFromMaxWebApp();
@@ -690,6 +745,9 @@ async function init() {
       if (btn.dataset.tab === "admin") await loadAdmin();
     });
   });
+  document.querySelectorAll(".subnav-btn").forEach((btn) => {
+    btn.addEventListener("click", () => activateAdminTab(btn.dataset.adminTab));
+  });
 
   byId("saveSessionBtn").addEventListener("click", setSession);
   byId("requestCodeBtn").addEventListener("click", requestCode);
@@ -703,6 +761,7 @@ async function init() {
   byId("refreshUsersBtn").addEventListener("click", loadAdmin);
   byId("refreshAuditBtn").addEventListener("click", loadAdmin);
   byId("saveBrandingBtn").addEventListener("click", saveBrandingSettings);
+  byId("saveThemeBtn").addEventListener("click", saveThemeSettings);
   byId("createAnotherBtn").addEventListener("click", () => {
     resetCreateFormVisibility();
     activateTab("create");

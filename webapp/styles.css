@@ -96,7 +96,7 @@ body {
 }
 
 .nav-btn.active, .primary {
-  background: linear-gradient(135deg, var(--accent), #169c8b);
+  background: linear-gradient(135deg, var(--accent), var(--button, #169c8b));
   color: white;
 }
 
@@ -123,6 +123,27 @@ input, select, textarea {
 
 .grid.two { grid-template-columns: 2fr 1fr; }
 .grid.three { grid-template-columns: repeat(4, 1fr); }
+.admin-panel-grid { margin-top: 20px; }
+.admin-subpanel { display: none; }
+.admin-subpanel.active { display: block; }
+.subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.subnav-btn {
+  border: 0;
+  border-radius: 14px;
+  padding: 12px 14px;
+  cursor: pointer;
+  font-weight: 600;
+  background: #ece1d1;
+  color: var(--ink);
+}
+.subnav-btn.active {
+  background: linear-gradient(135deg, var(--accent), var(--button, #169c8b));
+  color: white;
+}
 
 .result {
   margin-top: 12px;

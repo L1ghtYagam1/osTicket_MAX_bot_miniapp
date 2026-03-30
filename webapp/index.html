@@ -86,7 +86,6 @@
       <section class="panel" id="tab-tickets">
         <div class="panel-head">
           <h1>Мои заявки</h1>
-          <p>Актуальный статус каждой заявки backend читает из тикета.</p>
         </div>
         <div class="card">
           <button id="refreshTicketsBtn" class="primary">Обновить список</button>
@@ -99,8 +98,17 @@
           <h1>Админ-панель</h1>
           <p>Редактирование пользователей, справочников и просмотр аудита.</p>
         </div>
-        <div class="grid three">
-          <div class="card">
+        <div class="subnav" id="adminSubnav">
+          <button class="subnav-btn active" data-admin-tab="branding">Брендинг</button>
+          <button class="subnav-btn" data-admin-tab="theme">Цвета</button>
+          <button class="subnav-btn" data-admin-tab="users">Пользователи</button>
+          <button class="subnav-btn" data-admin-tab="hotels">Отели</button>
+          <button class="subnav-btn" data-admin-tab="categories">Категории</button>
+          <button class="subnav-btn" data-admin-tab="topics">Темы</button>
+          <button class="subnav-btn" data-admin-tab="audit">Аудит</button>
+        </div>
+        <div class="admin-panel-grid">
+          <div class="card admin-subpanel active" id="admin-panel-branding">
             <div class="card-toolbar">
               <h3>Брендинг</h3>
               <button id="saveBrandingBtn">Сохранить</button>
@@ -115,35 +123,50 @@
             <input id="brandIconUrlInput" placeholder="https://...">
             <div id="brandingResult" class="result"></div>
           </div>
-          <div class="card">
+          <div class="card admin-subpanel" id="admin-panel-theme">
+            <div class="card-toolbar">
+              <h3>Цвета интерфейса</h3>
+              <button id="saveThemeBtn">Сохранить</button>
+            </div>
+            <label>Фон интерфейса</label>
+            <input id="backgroundColorInput" placeholder="#f4efe7">
+            <label>Фон карточек</label>
+            <input id="cardColorInput" placeholder="#fffaf2">
+            <label>Основной акцент</label>
+            <input id="accentColorInput" placeholder="#0e7a6d">
+            <label>Цвет кнопок</label>
+            <input id="buttonColorInput" placeholder="#169c8b">
+            <div id="themeResult" class="result"></div>
+          </div>
+          <div class="card admin-subpanel" id="admin-panel-users">
             <div class="card-toolbar">
               <h3>Пользователи</h3>
               <button id="refreshUsersBtn">Обновить</button>
             </div>
             <div id="usersAdminList" class="list"></div>
           </div>
-          <div class="card">
+          <div class="card admin-subpanel" id="admin-panel-hotels">
             <div class="card-toolbar">
               <h3>Отели</h3>
               <button id="addHotelBtn">Добавить</button>
             </div>
             <div id="hotelsAdminList" class="list"></div>
           </div>
-          <div class="card">
+          <div class="card admin-subpanel" id="admin-panel-categories">
             <div class="card-toolbar">
               <h3>Категории</h3>
               <button id="addCategoryBtn">Добавить</button>
             </div>
             <div id="categoriesAdminList" class="list"></div>
           </div>
-          <div class="card">
+          <div class="card admin-subpanel" id="admin-panel-topics">
             <div class="card-toolbar">
               <h3>Темы</h3>
               <button id="addTopicBtn">Добавить</button>
             </div>
             <div id="topicsAdminList" class="list"></div>
           </div>
-          <div class="card">
+          <div class="card admin-subpanel" id="admin-panel-audit">
             <div class="card-toolbar">
               <h3>Журнал аудита</h3>
               <button id="refreshAuditBtn">Обновить</button>

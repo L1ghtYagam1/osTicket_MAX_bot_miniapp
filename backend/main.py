@@ -15,6 +15,8 @@ from .models import Category, Hotel, Topic, User
 from .schemas import (
     AdminAuditLogOut,
     AppSettingsOut,
+    AppThemeSettingsOut,
+    AppThemeSettingsUpdateRequest,
     AppSettingsUpdateRequest,
     BindEmailRequest,
     CatalogOut,
@@ -49,6 +51,7 @@ from .services import (
     enrich_ticket_status,
     enrich_tickets_status,
     get_app_settings,
+    get_app_theme_settings,
     get_catalog,
     get_user_by_max_id,
     init_defaults,
@@ -64,6 +67,7 @@ from .services import (
     sync_ticket_statuses,
     update_user,
     update_app_settings,
+    update_app_theme_settings,
     verify_email_code,
 )
 from .session_auth import SessionPrincipal, create_session_token, verify_session_token
@@ -232,6 +236,11 @@ async def catalog(db: Session = Depends(get_db)) -> CatalogOut:
 @app.get("/api/v1/app-settings", response_model=AppSettingsOut)
 async def app_settings(db: Session = Depends(get_db)) -> AppSettingsOut:
     return AppSettingsOut.model_validate(get_app_settings(db))
+
+
+@app.get("/api/v1/app-theme-settings", response_model=AppThemeSettingsOut)
+async def app_theme_settings(db: Session = Depends(get_db)) -> AppThemeSettingsOut:
+    return AppThemeSettingsOut.model_validate(get_app_theme_settings(db))
 
 
 @app.post("/api/v1/tickets", response_model=TicketOut)
@@ -470,6 +479,35 @@ async def admin_update_app_settings(
         },
     )
     return AppSettingsOut.model_validate(settings_row)
+
+
+@app.put("/api/v1/admin/app-theme-settings", response_model=AppThemeSettingsOut)
+async def admin_update_app_theme_settings(
+    payload: AppThemeSettingsUpdateRequest,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+) -> AppThemeSettingsOut:
+    settings_row = update_app_theme_settings(
+        db,
+        background_color=payload.background_color,
+        card_color=payload.card_color,
+        accent_color=payload.accent_color,
+        button_color=payload.button_color,
+    )
+    log_admin_action(
+        db,
+        actor_user_id=admin_user.id,
+        action="update",
+        entity_type="app_theme_settings",
+        entity_id=str(settings_row.id),
+        details={
+            "background_color": settings_row.background_color,
+            "card_color": settings_row.card_color,
+            "accent_color": settings_row.accent_color,
+            "button_color": settings_row.button_color,
+        },
+    )
+    return AppThemeSettingsOut.model_validate(settings_row)
 
 
 @app.post("/api/v1/internal/ticket-status-sync", response_model=list[TicketStatusNotificationOut], dependencies=[Depends(require_internal_token)])

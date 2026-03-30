@@ -43,11 +43,28 @@ class AppSettingsOut(BaseModel):
     brand_icon_url: str
 
 
+class AppThemeSettingsOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    background_color: str
+    card_color: str
+    accent_color: str
+    button_color: str
+
+
 class AppSettingsUpdateRequest(BaseModel):
     brand_name: str = Field(min_length=1, max_length=255)
     brand_subtitle: str = Field(min_length=0, max_length=255)
     brand_mark: str = Field(min_length=1, max_length=16)
     brand_icon_url: str = Field(min_length=0, max_length=1000)
+
+
+class AppThemeSettingsUpdateRequest(BaseModel):
+    background_color: str = Field(min_length=4, max_length=32)
+    card_color: str = Field(min_length=4, max_length=32)
+    accent_color: str = Field(min_length=4, max_length=32)
+    button_color: str = Field(min_length=4, max_length=32)
 
 
 class UserOut(BaseModel):
