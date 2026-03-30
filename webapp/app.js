@@ -6,8 +6,8 @@ const state = {
   user: null,
   appSettings: null,
   appThemeSettings: null,
+  integrationSettings: null,
   catalog: null,
-  webAppReady: false,
 };
 
 const api = {
@@ -73,6 +73,10 @@ const api = {
     return this.request("/api/v1/app-theme-settings");
   },
 
+  getIntegrationSettings() {
+    return this.request("/api/v1/integration-settings");
+  },
+
   getUserByMaxId(maxUserId) {
     return this.request(`/api/v1/users/by-max/${encodeURIComponent(maxUserId)}`);
   },
@@ -94,6 +98,17 @@ const api = {
 
   adminUpdateUser(id, payload) {
     return this.request(`/api/v1/admin/users/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  adminGetUserTicketAccess(id) {
+    return this.request(`/api/v1/admin/users/${id}/ticket-access`);
+  },
+
+  adminUpdateUserTicketAccess(id, payload) {
+    return this.request(`/api/v1/admin/users/${id}/ticket-access`, {
       method: "PUT",
       body: JSON.stringify(payload),
     });
@@ -170,6 +185,13 @@ const api = {
       body: JSON.stringify(payload),
     });
   },
+
+  adminUpdateIntegrationSettings(payload) {
+    return this.request("/api/v1/admin/integration-settings", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
 };
 
 function byId(id) {
@@ -178,6 +200,27 @@ function byId(id) {
 
 function setLaunchStatus(message) {
   byId("maxLaunchStatus").textContent = message;
+}
+
+function persistSession() {
+  localStorage.setItem("max_user_id", state.maxUserId);
+  localStorage.setItem("full_name", state.fullName);
+  if (state.accessToken) {
+    localStorage.setItem("access_token", state.accessToken);
+  } else {
+    localStorage.removeItem("access_token");
+  }
+}
+
+function hydrateSession() {
+  byId("maxUserId").value = state.maxUserId;
+  byId("fullName").value = state.fullName;
+}
+
+function setSession() {
+  state.maxUserId = byId("maxUserId").value.trim();
+  state.fullName = byId("fullName").value.trim();
+  persistSession();
 }
 
 function applyBranding() {
@@ -192,15 +235,15 @@ function applyBranding() {
 
   const markNode = byId("brandMark");
   if (settings.brand_icon_url) {
-    markNode.innerHTML = `<img src="${settings.brand_icon_url}" alt="brand icon" style="width:100%;height:100%;object-fit:cover;border-radius:16px;">`;
+    markNode.innerHTML = `<img src="${settings.brand_icon_url}" alt="Иконка" style="width:100%;height:100%;object-fit:cover;border-radius:16px;">`;
   } else {
     markNode.textContent = settings.brand_mark || "MS";
   }
 
-  if (byId("brandNameInput")) byId("brandNameInput").value = settings.brand_name || "";
-  if (byId("brandSubtitleInput")) byId("brandSubtitleInput").value = settings.brand_subtitle || "";
-  if (byId("brandMarkInput")) byId("brandMarkInput").value = settings.brand_mark || "";
-  if (byId("brandIconUrlInput")) byId("brandIconUrlInput").value = settings.brand_icon_url || "";
+  byId("brandNameInput").value = settings.brand_name || "";
+  byId("brandSubtitleInput").value = settings.brand_subtitle || "";
+  byId("brandMarkInput").value = settings.brand_mark || "";
+  byId("brandIconUrlInput").value = settings.brand_icon_url || "";
 }
 
 function applyThemeSettings() {
@@ -212,17 +255,22 @@ function applyThemeSettings() {
   document.documentElement.style.setProperty("--accent", theme.accent_color || "#0e7a6d");
   document.documentElement.style.setProperty("--button", theme.button_color || "#169c8b");
 
-  if (byId("backgroundColorInput")) byId("backgroundColorInput").value = theme.background_color || "";
-  if (byId("cardColorInput")) byId("cardColorInput").value = theme.card_color || "";
-  if (byId("accentColorInput")) byId("accentColorInput").value = theme.accent_color || "";
-  if (byId("buttonColorInput")) byId("buttonColorInput").value = theme.button_color || "";
+  byId("backgroundColorInput").value = theme.background_color || "";
+  byId("cardColorInput").value = theme.card_color || "";
+  byId("accentColorInput").value = theme.accent_color || "";
+  byId("buttonColorInput").value = theme.button_color || "";
+}
+
+function applyIntegrationSettings() {
+  const settings = state.integrationSettings;
+  if (!settings) return;
+  byId("pluginLabelInput").value = settings.plugin_label || "Extended osTicket API";
+  byId("extendedApiEnabledInput").checked = Boolean(settings.extended_api_enabled);
 }
 
 function updateAdminVisibility() {
   const adminNavBtn = document.querySelector('.nav-btn[data-tab="admin"]');
   const adminPanel = byId("tab-admin");
-  if (!adminNavBtn || !adminPanel) return;
-
   const shouldShowAdmin = Boolean(state.isAdmin);
   adminNavBtn.hidden = !shouldShowAdmin;
   adminPanel.hidden = !shouldShowAdmin;
@@ -236,9 +284,8 @@ function updateBindVisibility() {
   const bindNavBtn = document.querySelector('.nav-btn[data-tab="bind"]');
   const bindPanel = byId("tab-bind");
   const bindSummary = byId("bindSummary");
-  if (!bindNavBtn || !bindPanel || !bindSummary) return;
-
   const hasVerifiedEmail = Boolean(state.user && state.user.work_email);
+
   bindNavBtn.hidden = hasVerifiedEmail;
   bindPanel.hidden = hasVerifiedEmail;
 
@@ -256,9 +303,7 @@ function updateBindVisibility() {
 }
 
 function updateSessionVisibility() {
-  const sessionCard = byId("sessionCard");
-  if (!sessionCard) return;
-  sessionCard.hidden = Boolean(state.user && state.user.work_email);
+  byId("sessionCard").hidden = Boolean(state.user && state.user.work_email);
 }
 
 function applyKnownUser(user) {
@@ -268,30 +313,10 @@ function applyKnownUser(user) {
   state.fullName = String(user.full_name || state.fullName);
   state.isAdmin = Boolean(user.is_admin);
   persistSession();
+  hydrateSession();
   updateAdminVisibility();
   updateBindVisibility();
   updateSessionVisibility();
-}
-
-function persistSession() {
-  localStorage.setItem("max_user_id", state.maxUserId);
-  localStorage.setItem("full_name", state.fullName);
-  if (state.accessToken) {
-    localStorage.setItem("access_token", state.accessToken);
-  } else {
-    localStorage.removeItem("access_token");
-  }
-}
-
-function setSession() {
-  state.maxUserId = byId("maxUserId").value.trim();
-  state.fullName = byId("fullName").value.trim();
-  persistSession();
-}
-
-function hydrateSession() {
-  byId("maxUserId").value = state.maxUserId;
-  byId("fullName").value = state.fullName;
 }
 
 async function validateStoredSession() {
@@ -350,10 +375,8 @@ async function hydrateFromMaxWebApp() {
       state.maxUserId = String(session.max_user_id || "");
       state.fullName = String(session.full_name || "");
       state.accessToken = String(session.access_token || "");
-      byId("maxUserId").value = state.maxUserId;
-      byId("fullName").value = state.fullName;
       persistSession();
-      state.webAppReady = true;
+      hydrateSession();
       setLaunchStatus("Сессия подтверждена через MAX WebApp.");
       return;
     } catch (error) {
@@ -368,16 +391,14 @@ async function hydrateFromMaxWebApp() {
 
   if (maxUserId) {
     state.maxUserId = String(maxUserId);
-    byId("maxUserId").value = state.maxUserId;
   }
   if (fullName) {
     state.fullName = String(fullName);
-    byId("fullName").value = state.fullName;
   }
   if (maxUserId || fullName) {
     persistSession();
-    state.webAppReady = true;
-    setLaunchStatus("Данные пользователя получены из MAX WebApp без серверной валидации.");
+    hydrateSession();
+    setLaunchStatus("Данные пользователя получены из MAX WebApp.");
     return;
   }
 
@@ -393,17 +414,24 @@ function activateTab(tab) {
   });
 }
 
+function activateAdminTab(tab) {
+  document.querySelectorAll(".subnav-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.adminTab === tab);
+  });
+  document.querySelectorAll(".admin-subpanel").forEach((panel) => {
+    panel.classList.toggle("active", panel.id === `admin-panel-${tab}`);
+  });
+}
+
 async function loadCatalog() {
   state.catalog = await api.getCatalog();
 
-  const hotelSelect = byId("hotelSelect");
-  const categorySelect = byId("categorySelect");
-  hotelSelect.innerHTML = state.catalog.hotels
+  byId("hotelSelect").innerHTML = state.catalog.hotels
     .filter((item) => item.is_active)
     .map((item) => `<option value="${item.id}">${item.name}</option>`)
     .join("");
 
-  categorySelect.innerHTML = state.catalog.categories
+  byId("categorySelect").innerHTML = state.catalog.categories
     .filter((item) => item.is_active)
     .map((item) => `<option value="${item.id}">${item.name}</option>`)
     .join("");
@@ -429,12 +457,16 @@ async function requestCode() {
     result.textContent = "Сначала укажите MAX User ID и рабочую почту.";
     return;
   }
-  const data = await api.requestEmailCode({
-    max_user_id: state.maxUserId,
-    full_name: state.fullName,
-    email,
-  });
-  result.textContent = data.message;
+  try {
+    const data = await api.requestEmailCode({
+      max_user_id: state.maxUserId,
+      full_name: state.fullName,
+      email,
+    });
+    result.textContent = data.message;
+  } catch (error) {
+    result.textContent = error.message;
+  }
 }
 
 async function bindEmail() {
@@ -446,15 +478,27 @@ async function bindEmail() {
     result.textContent = "Укажите MAX User ID, рабочую почту и код из письма.";
     return;
   }
-  const data = await api.verifyEmailCode({
-    max_user_id: state.maxUserId,
-    full_name: state.fullName,
-    email,
-    code,
-  });
-  applyKnownUser(data);
-  result.textContent = `Почта подтверждена: ${data.work_email}`;
-  activateTab("create");
+  try {
+    const data = await api.verifyEmailCode({
+      max_user_id: state.maxUserId,
+      full_name: state.fullName,
+      email,
+      code,
+    });
+    applyKnownUser(data);
+    result.textContent = `Почта подтверждена: ${data.work_email}`;
+    activateTab("create");
+  } catch (error) {
+    result.textContent = error.message;
+  }
+}
+
+function resetCreateFormVisibility() {
+  byId("createFormCard").hidden = false;
+  byId("createHintCard").hidden = !Boolean(state.appSettings && state.appSettings.brand_subtitle);
+  byId("createSuccessCard").hidden = true;
+  byId("createSuccessText").textContent = "";
+  byId("createResult").textContent = "";
 }
 
 async function createTicket() {
@@ -464,20 +508,38 @@ async function createTicket() {
     result.textContent = "Сначала сохраните MAX User ID.";
     return;
   }
-  const payload = {
-    max_user_id: state.maxUserId,
-    hotel_id: Number(byId("hotelSelect").value),
-    category_id: Number(byId("categorySelect").value),
-    topic_id: Number(byId("topicSelect").value),
-    description: byId("descriptionInput").value.trim(),
-  };
-  const data = await api.createTicket(payload);
-  result.textContent = "";
-  byId("createSuccessText").textContent = `ID заявки: ${data.external_id}. Статус: ${data.current_status}`;
-  byId("createFormCard").hidden = true;
-  byId("createHintCard").hidden = true;
-  byId("createSuccessCard").hidden = false;
-  byId("descriptionInput").value = "";
+
+  try {
+    const data = await api.createTicket({
+      max_user_id: state.maxUserId,
+      hotel_id: Number(byId("hotelSelect").value),
+      category_id: Number(byId("categorySelect").value),
+      topic_id: Number(byId("topicSelect").value),
+      description: byId("descriptionInput").value.trim(),
+    });
+    byId("createSuccessText").textContent = `ID заявки: ${data.external_id}\nСтатус: ${data.current_status}`;
+    byId("createFormCard").hidden = true;
+    byId("createHintCard").hidden = true;
+    byId("createSuccessCard").hidden = false;
+    byId("descriptionInput").value = "";
+  } catch (error) {
+    result.textContent = error.message;
+  }
+}
+
+function renderTickets(tickets) {
+  const root = byId("ticketsList");
+  root.innerHTML = tickets.map((ticket) => `
+    <div class="list-item ticket-item">
+      <div class="list-head">
+        <span>#${ticket.external_id}</span>
+        <span>${ticket.current_status}</span>
+      </div>
+      <div>${ticket.subject}</div>
+      <div class="list-meta">${ticket.description}</div>
+      ${ticket.is_shared ? `<div class="list-meta">Владелец: ${ticket.owner_full_name || ticket.owner_work_email}</div>` : ""}
+    </div>
+  `).join("") || `<div class="list-item">Заявок пока нет.</div>`;
 }
 
 async function refreshTickets() {
@@ -487,17 +549,12 @@ async function refreshTickets() {
     root.innerHTML = `<div class="list-item">Сначала сохраните MAX User ID.</div>`;
     return;
   }
-  const tickets = await api.getTickets(state.maxUserId);
-  root.innerHTML = tickets.map((ticket) => `
-    <div class="list-item">
-      <div class="list-head">
-        <span>#${ticket.external_id}</span>
-        <span>${ticket.current_status}</span>
-      </div>
-      <div>${ticket.subject}</div>
-      <div class="list-meta">${ticket.description}</div>
-    </div>
-  `).join("") || `<div class="list-item">Заявок пока нет.</div>`;
+  try {
+    const tickets = await api.getTickets(state.maxUserId);
+    renderTickets(tickets);
+  } catch (error) {
+    root.innerHTML = `<div class="list-item">${error.message}</div>`;
+  }
 }
 
 function renderAdminList(items, rootId, type) {
@@ -527,13 +584,15 @@ function renderUsers(items) {
   root.innerHTML = items.map((item) => `
     <div class="list-item">
       <div class="list-head">
-        <span>${item.full_name || item.work_email}</span>
+        <span>${item.full_name || item.work_email || item.max_user_id}</span>
         <span>${item.is_admin ? "admin" : "user"}</span>
       </div>
-      <div class="list-meta">${item.work_email}</div>
+      <div class="list-meta">${item.work_email || "Почта не привязана"}</div>
       <div class="list-meta">MAX: ${item.max_user_id} | ${item.is_active ? "active" : "inactive"}</div>
-      <div class="admin-actions">
-        <button onclick="editUser(${item.id})">Редактировать</button>
+      <div class="admin-actions wrap">
+        <button onclick="editUser(${item.id})">Профиль</button>
+        <button onclick="toggleAdmin(${item.id})">${item.is_admin ? "Снять админку" : "Сделать админом"}</button>
+        <button onclick="manageAccess(${item.id})">Права на заявки</button>
       </div>
     </div>
   `).join("") || `<div class="list-item">Пусто</div>`;
@@ -559,13 +618,16 @@ async function loadAdmin() {
     return;
   }
   try {
-    const [users, hotels, categories, topics, auditLogs] = await Promise.all([
+    const [users, hotels, categories, topics, auditLogs, integrationSettings] = await Promise.all([
       api.adminListUsers(),
       api.adminListHotels(),
       api.adminListCategories(),
       api.adminListTopics(),
       api.adminListAuditLogs(),
+      api.getIntegrationSettings(),
     ]);
+    state.integrationSettings = integrationSettings;
+    applyIntegrationSettings();
     renderUsers(users);
     renderAdminList(hotels, "hotelsAdminList", "hotels");
     renderAdminList(categories, "categoriesAdminList", "categories");
@@ -584,13 +646,12 @@ async function loadAdmin() {
 async function saveBrandingSettings() {
   const result = byId("brandingResult");
   try {
-    const data = await api.adminUpdateAppSettings({
+    state.appSettings = await api.adminUpdateAppSettings({
       brand_name: byId("brandNameInput").value.trim(),
       brand_subtitle: byId("brandSubtitleInput").value.trim(),
       brand_mark: byId("brandMarkInput").value.trim(),
       brand_icon_url: byId("brandIconUrlInput").value.trim(),
     });
-    state.appSettings = data;
     applyBranding();
     resetCreateFormVisibility();
     result.textContent = "Настройки брендинга сохранены.";
@@ -602,13 +663,12 @@ async function saveBrandingSettings() {
 async function saveThemeSettings() {
   const result = byId("themeResult");
   try {
-    const data = await api.adminUpdateAppThemeSettings({
+    state.appThemeSettings = await api.adminUpdateAppThemeSettings({
       background_color: byId("backgroundColorInput").value.trim(),
       card_color: byId("cardColorInput").value.trim(),
       accent_color: byId("accentColorInput").value.trim(),
       button_color: byId("buttonColorInput").value.trim(),
     });
-    state.appThemeSettings = data;
     applyThemeSettings();
     result.textContent = "Цвета интерфейса сохранены.";
   } catch (error) {
@@ -616,35 +676,79 @@ async function saveThemeSettings() {
   }
 }
 
-function activateAdminTab(tab) {
-  document.querySelectorAll(".subnav-btn").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.adminTab === tab);
-  });
-  document.querySelectorAll(".admin-subpanel").forEach((panel) => {
-    panel.classList.toggle("active", panel.id === `admin-panel-${tab}`);
-  });
-}
-
-function resetCreateFormVisibility() {
-  byId("createFormCard").hidden = false;
-  byId("createHintCard").hidden = !Boolean(state.appSettings && state.appSettings.brand_subtitle);
-  byId("createSuccessCard").hidden = true;
-  byId("createSuccessText").textContent = "";
+async function saveIntegrationSettings() {
+  const result = byId("integrationResult");
+  try {
+    state.integrationSettings = await api.adminUpdateIntegrationSettings({
+      extended_api_enabled: byId("extendedApiEnabledInput").checked,
+      plugin_label: byId("pluginLabelInput").value.trim() || "Extended osTicket API",
+    });
+    applyIntegrationSettings();
+    result.textContent = "Настройки интеграции сохранены.";
+  } catch (error) {
+    result.textContent = error.message;
+  }
 }
 
 window.editUser = async function editUser(id) {
   try {
     const users = await api.adminListUsers();
     const user = users.find((item) => item.id === id);
+    if (!user) return;
     const fullName = prompt("Имя пользователя", user.full_name || "");
     if (fullName === null) return;
-    const isAdmin = confirm("Выдать права администратора?");
-    const isActive = confirm("Оставить пользователя активным?");
+    const activeAnswer = prompt("Активный пользователь? Введите yes или no", user.is_active ? "yes" : "no");
+    if (activeAnswer === null) return;
     await api.adminUpdateUser(id, {
       full_name: fullName,
-      is_admin: isAdmin,
-      is_active: isActive,
+      is_admin: user.is_admin,
+      is_active: activeAnswer.trim().toLowerCase() !== "no",
     });
+    await loadAdmin();
+  } catch (error) {
+    alert(error.message);
+  }
+};
+
+window.toggleAdmin = async function toggleAdmin(id) {
+  try {
+    const users = await api.adminListUsers();
+    const user = users.find((item) => item.id === id);
+    if (!user) return;
+    await api.adminUpdateUser(id, {
+      full_name: user.full_name || "",
+      is_admin: !user.is_admin,
+      is_active: user.is_active,
+    });
+    await loadAdmin();
+  } catch (error) {
+    alert(error.message);
+  }
+};
+
+window.manageAccess = async function manageAccess(id) {
+  try {
+    const [users, accessItems] = await Promise.all([
+      api.adminListUsers(),
+      api.adminGetUserTicketAccess(id),
+    ]);
+    const user = users.find((item) => item.id === id);
+    if (!user) return;
+    const helpText = accessItems
+      .map((item) => `${item.user_id}: ${item.full_name || item.work_email || item.max_user_id}${item.can_view ? " [доступ]" : ""}`)
+      .join("\n");
+    const current = accessItems.filter((item) => item.can_view).map((item) => String(item.user_id)).join(",");
+    const raw = prompt(
+      `Укажите через запятую ID пользователей, чьи заявки может видеть ${user.full_name || user.work_email}.\n\n${helpText}`,
+      current,
+    );
+    if (raw === null) return;
+    const ownerUserIds = raw
+      .split(",")
+      .map((item) => Number(item.trim()))
+      .filter((item) => Number.isFinite(item) && item > 0);
+    await api.adminUpdateUserTicketAccess(id, { owner_user_ids: ownerUserIds });
+    alert("Права на просмотр заявок обновлены.");
     await loadAdmin();
   } catch (error) {
     alert(error.message);
@@ -656,6 +760,7 @@ window.editItem = async function editItem(type, id) {
     if (type === "hotels") {
       const hotels = await api.adminListHotels();
       const hotel = hotels.find((item) => item.id === id);
+      if (!hotel) return;
       const name = prompt("Новое имя отеля", hotel.name);
       if (!name) return;
       await api.adminUpdateHotel(id, { name, is_active: hotel.is_active });
@@ -663,6 +768,7 @@ window.editItem = async function editItem(type, id) {
     if (type === "categories") {
       const categories = await api.adminListCategories();
       const category = categories.find((item) => item.id === id);
+      if (!category) return;
       const name = prompt("Новое имя категории", category.name);
       if (!name) return;
       const topicId = prompt("Новый osTicket topicId", String(category.osticket_topic_id));
@@ -676,6 +782,7 @@ window.editItem = async function editItem(type, id) {
     if (type === "topics") {
       const topics = await api.adminListTopics();
       const topic = topics.find((item) => item.id === id);
+      if (!topic) return;
       const name = prompt("Новое имя темы", topic.name);
       if (!name) return;
       const categoryId = prompt("ID категории", String(topic.category_id));
@@ -724,15 +831,19 @@ async function addTopic() {
 async function init() {
   state.appSettings = await api.getAppSettings();
   state.appThemeSettings = await api.getAppThemeSettings();
+  state.integrationSettings = await api.getIntegrationSettings();
   applyBranding();
   applyThemeSettings();
+  applyIntegrationSettings();
+
   hydrateSession();
   await validateStoredSession();
   await hydrateFromMaxWebApp();
   await validateStoredSession();
-  hydrateSession();
+  await hydrateKnownUser();
   updateAdminVisibility();
   updateBindVisibility();
+  updateSessionVisibility();
 
   document.querySelectorAll(".nav-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -745,11 +856,15 @@ async function init() {
       if (btn.dataset.tab === "admin") await loadAdmin();
     });
   });
+
   document.querySelectorAll(".subnav-btn").forEach((btn) => {
     btn.addEventListener("click", () => activateAdminTab(btn.dataset.adminTab));
   });
 
-  byId("saveSessionBtn").addEventListener("click", setSession);
+  byId("saveSessionBtn").addEventListener("click", async () => {
+    setSession();
+    await hydrateKnownUser();
+  });
   byId("requestCodeBtn").addEventListener("click", requestCode);
   byId("bindEmailBtn").addEventListener("click", bindEmail);
   byId("createTicketBtn").addEventListener("click", createTicket);
@@ -762,13 +877,13 @@ async function init() {
   byId("refreshAuditBtn").addEventListener("click", loadAdmin);
   byId("saveBrandingBtn").addEventListener("click", saveBrandingSettings);
   byId("saveThemeBtn").addEventListener("click", saveThemeSettings);
+  byId("saveIntegrationBtn").addEventListener("click", saveIntegrationSettings);
   byId("createAnotherBtn").addEventListener("click", () => {
     resetCreateFormVisibility();
     activateTab("create");
   });
 
   await loadCatalog();
-  await hydrateKnownUser();
   resetCreateFormVisibility();
   if (state.user && state.user.work_email) {
     activateTab("create");

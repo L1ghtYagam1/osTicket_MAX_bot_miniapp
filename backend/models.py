@@ -27,6 +27,14 @@ class User(Base, TimestampMixin):
 
     tickets: Mapped[list["Ticket"]] = relationship(back_populates="user")
     audit_logs: Mapped[list["AdminAuditLog"]] = relationship(back_populates="actor")
+    view_permissions_given: Mapped[list["UserTicketViewPermission"]] = relationship(
+        foreign_keys="UserTicketViewPermission.owner_user_id",
+        back_populates="owner",
+    )
+    view_permissions_received: Mapped[list["UserTicketViewPermission"]] = relationship(
+        foreign_keys="UserTicketViewPermission.viewer_user_id",
+        back_populates="viewer",
+    )
 
 
 class AppSettings(Base, TimestampMixin):
@@ -47,6 +55,14 @@ class AppThemeSettings(Base, TimestampMixin):
     card_color: Mapped[str] = mapped_column(String(32), default="#fffaf2")
     accent_color: Mapped[str] = mapped_column(String(32), default="#0e7a6d")
     button_color: Mapped[str] = mapped_column(String(32), default="#169c8b")
+
+
+class IntegrationSettings(Base, TimestampMixin):
+    __tablename__ = "integration_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    extended_api_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    plugin_label: Mapped[str] = mapped_column(String(255), default="Extended osTicket API")
 
 
 class Hotel(Base, TimestampMixin):
@@ -95,6 +111,24 @@ class Ticket(Base, TimestampMixin):
 
     user: Mapped["User"] = relationship(back_populates="tickets")
     notifications: Mapped[list["TicketStatusNotification"]] = relationship(back_populates="ticket")
+
+
+class UserTicketViewPermission(Base, TimestampMixin):
+    __tablename__ = "user_ticket_view_permissions"
+    __table_args__ = (UniqueConstraint("viewer_user_id", "owner_user_id", name="uq_viewer_owner_permission"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    viewer_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+
+    viewer: Mapped["User"] = relationship(
+        foreign_keys=[viewer_user_id],
+        back_populates="view_permissions_received",
+    )
+    owner: Mapped["User"] = relationship(
+        foreign_keys=[owner_user_id],
+        back_populates="view_permissions_given",
+    )
 
 
 class EmailVerification(Base, TimestampMixin):

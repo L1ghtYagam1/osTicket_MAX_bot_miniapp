@@ -25,7 +25,7 @@
         <input id="maxUserId" placeholder="Например 455587587">
         <label>Имя</label>
         <input id="fullName" placeholder="ФИО">
-        <button id="saveSessionBtn" class="primary">Сохранить сессию</button>
+        <button id="saveSessionBtn" class="primary full-width">Сохранить сессию</button>
       </div>
 
       <nav class="nav">
@@ -40,16 +40,16 @@
       <section class="panel active" id="tab-bind">
         <div class="panel-head">
           <h1>Подтверждение рабочей почты</h1>
-          <p>Сначала отправьте код на рабочую почту, затем подтвердите его.</p>
+          <p>Один раз подтвердите рабочую почту, и приложение запомнит вас для следующих входов.</p>
         </div>
         <div class="card">
           <div id="bindSummary" class="result" hidden></div>
           <label>Рабочая почта</label>
           <input id="emailInput" placeholder="name@company.ru">
-          <button id="requestCodeBtn" class="primary">Отправить код</button>
+          <button id="requestCodeBtn" class="primary full-width">Отправить код</button>
           <label>Код из письма</label>
           <input id="emailCodeInput" placeholder="123456">
-          <button id="bindEmailBtn" class="primary">Подтвердить почту</button>
+          <button id="bindEmailBtn" class="primary full-width">Подтвердить почту</button>
           <div id="bindResult" class="result"></div>
         </div>
       </section>
@@ -68,7 +68,7 @@
             <select id="topicSelect"></select>
             <label>Описание</label>
             <textarea id="descriptionInput" rows="8" placeholder="Опишите проблему"></textarea>
-            <button id="createTicketBtn" class="primary">Отправить заявку</button>
+            <button id="createTicketBtn" class="primary full-width">Отправить заявку</button>
             <div id="createResult" class="result"></div>
           </div>
           <div class="card" id="createHintCard">
@@ -78,7 +78,7 @@
           <div class="card" id="createSuccessCard" hidden>
             <h3>Ваша заявка создана</h3>
             <div id="createSuccessText" class="result"></div>
-            <button id="createAnotherBtn" class="primary">Создать ещё заявку</button>
+            <button id="createAnotherBtn" class="primary full-width">Создать ещё заявку</button>
           </div>
         </div>
       </section>
@@ -87,8 +87,8 @@
         <div class="panel-head">
           <h1>Мои заявки</h1>
         </div>
-        <div class="card">
-          <button id="refreshTicketsBtn" class="primary">Обновить список</button>
+        <div class="card tickets-card">
+          <button id="refreshTicketsBtn" class="primary full-width">Обновить список</button>
           <div id="ticketsList" class="list"></div>
         </div>
       </section>
@@ -96,11 +96,12 @@
       <section class="panel" id="tab-admin" hidden>
         <div class="panel-head">
           <h1>Админ-панель</h1>
-          <p>Редактирование пользователей, справочников и просмотр аудита.</p>
+          <p>Управление пользователями, правами доступа, справочниками и настройками интерфейса.</p>
         </div>
         <div class="subnav" id="adminSubnav">
           <button class="subnav-btn active" data-admin-tab="branding">Брендинг</button>
           <button class="subnav-btn" data-admin-tab="theme">Цвета</button>
+          <button class="subnav-btn" data-admin-tab="integration">Интеграция</button>
           <button class="subnav-btn" data-admin-tab="users">Пользователи</button>
           <button class="subnav-btn" data-admin-tab="hotels">Отели</button>
           <button class="subnav-btn" data-admin-tab="categories">Категории</button>
@@ -123,6 +124,7 @@
             <input id="brandIconUrlInput" placeholder="https://...">
             <div id="brandingResult" class="result"></div>
           </div>
+
           <div class="card admin-subpanel" id="admin-panel-theme">
             <div class="card-toolbar">
               <h3>Цвета интерфейса</h3>
@@ -138,6 +140,21 @@
             <input id="buttonColorInput" placeholder="#169c8b">
             <div id="themeResult" class="result"></div>
           </div>
+
+          <div class="card admin-subpanel" id="admin-panel-integration">
+            <div class="card-toolbar">
+              <h3>Интеграция osTicket</h3>
+              <button id="saveIntegrationBtn">Сохранить</button>
+            </div>
+            <label>Название плагина</label>
+            <input id="pluginLabelInput" placeholder="Extended osTicket API">
+            <label class="toggle-row">
+              <input id="extendedApiEnabledInput" type="checkbox">
+              <span>Включить расширенный API-плагин</span>
+            </label>
+            <div id="integrationResult" class="result"></div>
+          </div>
+
           <div class="card admin-subpanel" id="admin-panel-users">
             <div class="card-toolbar">
               <h3>Пользователи</h3>
@@ -145,6 +162,7 @@
             </div>
             <div id="usersAdminList" class="list"></div>
           </div>
+
           <div class="card admin-subpanel" id="admin-panel-hotels">
             <div class="card-toolbar">
               <h3>Отели</h3>
@@ -152,6 +170,7 @@
             </div>
             <div id="hotelsAdminList" class="list"></div>
           </div>
+
           <div class="card admin-subpanel" id="admin-panel-categories">
             <div class="card-toolbar">
               <h3>Категории</h3>
@@ -159,6 +178,7 @@
             </div>
             <div id="categoriesAdminList" class="list"></div>
           </div>
+
           <div class="card admin-subpanel" id="admin-panel-topics">
             <div class="card-toolbar">
               <h3>Темы</h3>
@@ -166,6 +186,7 @@
             </div>
             <div id="topicsAdminList" class="list"></div>
           </div>
+
           <div class="card admin-subpanel" id="admin-panel-audit">
             <div class="card-toolbar">
               <h3>Журнал аудита</h3>

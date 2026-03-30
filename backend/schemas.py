@@ -53,6 +53,14 @@ class AppThemeSettingsOut(BaseModel):
     button_color: str
 
 
+class IntegrationSettingsOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    extended_api_enabled: bool
+    plugin_label: str
+
+
 class AppSettingsUpdateRequest(BaseModel):
     brand_name: str = Field(min_length=1, max_length=255)
     brand_subtitle: str = Field(min_length=0, max_length=255)
@@ -67,6 +75,11 @@ class AppThemeSettingsUpdateRequest(BaseModel):
     button_color: str = Field(min_length=4, max_length=32)
 
 
+class IntegrationSettingsUpdateRequest(BaseModel):
+    extended_api_enabled: bool
+    plugin_label: str = Field(min_length=1, max_length=255)
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -76,12 +89,25 @@ class UserOut(BaseModel):
     work_email: str
     is_admin: bool
     is_active: bool
+    can_manage_admins: bool = False
 
 
 class UserUpdateRequest(BaseModel):
     full_name: str = Field(min_length=0, max_length=255)
     is_admin: bool
     is_active: bool
+
+
+class UserTicketAccessItemOut(BaseModel):
+    user_id: int
+    max_user_id: str
+    full_name: str
+    work_email: str
+    can_view: bool
+
+
+class UserTicketAccessUpdateRequest(BaseModel):
+    owner_user_ids: list[int]
 
 
 class AdminAuditLogOut(BaseModel):
@@ -158,6 +184,10 @@ class TicketOut(BaseModel):
     description: str
     status: str
     current_status: str
+    owner_max_user_id: str
+    owner_full_name: str
+    owner_work_email: str
+    is_shared: bool
     created_at: datetime
     updated_at: datetime
 

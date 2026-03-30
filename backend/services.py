@@ -10,7 +10,20 @@ from sqlalchemy.orm import Session, selectinload
 from .config import get_settings
 from .defaults import DEFAULT_CATEGORIES, DEFAULT_HOTELS
 from .mailer import send_verification_email
-from .models import AdminAuditLog, AppSettings, AppThemeSettings, Category, EmailVerification, Hotel, Ticket, TicketStatusNotification, Topic, User
+from .models import (
+    AdminAuditLog,
+    AppSettings,
+    AppThemeSettings,
+    Category,
+    EmailVerification,
+    Hotel,
+    IntegrationSettings,
+    Ticket,
+    TicketStatusNotification,
+    Topic,
+    User,
+    UserTicketViewPermission,
+)
 from .osticket import OsTicketClient
 
 
@@ -23,6 +36,8 @@ def init_defaults(db: Session) -> None:
         db.add(AppSettings(id=1))
     if db.get(AppThemeSettings, 1) is None:
         db.add(AppThemeSettings(id=1))
+    if db.get(IntegrationSettings, 1) is None:
+        db.add(IntegrationSettings(id=1))
 
     if not db.scalar(select(Hotel.id).limit(1)):
         for hotel_name in DEFAULT_HOTELS:
@@ -150,7 +165,7 @@ def get_user_by_max_id(db: Session, max_user_id: str) -> User | None:
         return None
 
     should_be_admin = max_user_id in settings.admin_max_ids
-    if user.is_admin != should_be_admin:
+    if should_be_admin and not user.is_admin:
         user.is_admin = should_be_admin
         db.commit()
         db.refresh(user)
@@ -192,6 +207,30 @@ def get_app_theme_settings(db: Session) -> AppThemeSettings:
         db.add(settings_row)
         db.commit()
         db.refresh(settings_row)
+    return settings_row
+
+
+def get_integration_settings(db: Session) -> IntegrationSettings:
+    settings_row = db.get(IntegrationSettings, 1)
+    if settings_row is None:
+        settings_row = IntegrationSettings(id=1)
+        db.add(settings_row)
+        db.commit()
+        db.refresh(settings_row)
+    return settings_row
+
+
+def update_integration_settings(
+    db: Session,
+    *,
+    extended_api_enabled: bool,
+    plugin_label: str,
+) -> IntegrationSettings:
+    settings_row = get_integration_settings(db)
+    settings_row.extended_api_enabled = extended_api_enabled
+    settings_row.plugin_label = plugin_label
+    db.commit()
+    db.refresh(settings_row)
     return settings_row
 
 
@@ -247,6 +286,63 @@ def update_user(db: Session, user_id: int, *, full_name: str, is_admin: bool, is
     db.commit()
     db.refresh(user)
     return user
+
+
+def list_ticket_access_items(db: Session, viewer_user_id: int) -> list[dict]:
+    viewer = db.get(User, viewer_user_id)
+    if viewer is None:
+        raise ValueError("Пользователь не найден")
+
+    permissions = {
+        item.owner_user_id
+        for item in db.scalars(
+            select(UserTicketViewPermission).where(UserTicketViewPermission.viewer_user_id == viewer_user_id)
+        ).all()
+    }
+    users = list(
+        db.scalars(
+            select(User)
+            .where(User.id != viewer_user_id)
+            .order_by(User.full_name.asc(), User.work_email.asc())
+        ).all()
+    )
+    return [
+        {
+            "user_id": item.id,
+            "max_user_id": item.max_user_id,
+            "full_name": item.full_name or "",
+            "work_email": item.work_email or "",
+            "can_view": item.id in permissions,
+        }
+        for item in users
+    ]
+
+
+def update_ticket_access_items(db: Session, viewer_user_id: int, owner_user_ids: list[int]) -> list[dict]:
+    viewer = db.get(User, viewer_user_id)
+    if viewer is None:
+        raise ValueError("Пользователь не найден")
+
+    sanitized_ids = sorted({item for item in owner_user_ids if item and item != viewer_user_id})
+    owners = list(db.scalars(select(User).where(User.id.in_(sanitized_ids))).all()) if sanitized_ids else []
+    owner_ids_found = {item.id for item in owners}
+    missing = [str(item) for item in sanitized_ids if item not in owner_ids_found]
+    if missing:
+        raise ValueError(f"Не найдены пользователи для доступа: {', '.join(missing)}")
+
+    existing = list(
+        db.scalars(
+            select(UserTicketViewPermission).where(UserTicketViewPermission.viewer_user_id == viewer_user_id)
+        ).all()
+    )
+    for item in existing:
+        db.delete(item)
+
+    for owner_id in sanitized_ids:
+        db.add(UserTicketViewPermission(viewer_user_id=viewer_user_id, owner_user_id=owner_id))
+
+    db.commit()
+    return list_ticket_access_items(db, viewer_user_id)
 
 
 def log_admin_action(
@@ -317,6 +413,10 @@ async def create_ticket(
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
+    ticket.owner_max_user_id = user.max_user_id  # type: ignore[attr-defined]
+    ticket.owner_full_name = user.full_name or user.work_email  # type: ignore[attr-defined]
+    ticket.owner_work_email = user.work_email  # type: ignore[attr-defined]
+    ticket.is_shared = False  # type: ignore[attr-defined]
     return ticket
 
 
@@ -325,13 +425,27 @@ def list_user_tickets(db: Session, max_user_id: str) -> list[Ticket]:
         user = require_active_user(db, max_user_id)
     except ValueError:
         return []
-    return list(
+
+    shared_owner_ids = list(
+        db.scalars(
+            select(UserTicketViewPermission.owner_user_id).where(UserTicketViewPermission.viewer_user_id == user.id)
+        ).all()
+    )
+    accessible_ids = [user.id, *shared_owner_ids]
+    tickets = list(
         db.scalars(
             select(Ticket)
-            .where(Ticket.user_id == user.id)
+            .options(selectinload(Ticket.user))
+            .where(Ticket.user_id.in_(accessible_ids))
             .order_by(Ticket.created_at.desc())
         ).all()
     )
+    for ticket in tickets:
+        ticket.owner_max_user_id = ticket.user.max_user_id  # type: ignore[attr-defined]
+        ticket.owner_full_name = ticket.user.full_name or ticket.user.work_email  # type: ignore[attr-defined]
+        ticket.owner_work_email = ticket.user.work_email  # type: ignore[attr-defined]
+        ticket.is_shared = ticket.user_id != user.id  # type: ignore[attr-defined]
+    return tickets
 
 
 async def enrich_ticket_status(ticket: Ticket) -> Ticket:
@@ -342,9 +456,19 @@ async def enrich_ticket_status(ticket: Ticket) -> Ticket:
         except Exception:
             current_status = ticket.status
         ticket.current_status = current_status  # type: ignore[attr-defined]
+        if not hasattr(ticket, "owner_max_user_id"):
+            ticket.owner_max_user_id = ticket.user.max_user_id if ticket.user else ""  # type: ignore[attr-defined]
+            ticket.owner_full_name = (ticket.user.full_name or ticket.user.work_email) if ticket.user else ""  # type: ignore[attr-defined]
+            ticket.owner_work_email = ticket.user.work_email if ticket.user else ""  # type: ignore[attr-defined]
+            ticket.is_shared = False  # type: ignore[attr-defined]
         return ticket
 
     ticket.current_status = ticket.status  # type: ignore[attr-defined]
+    if not hasattr(ticket, "owner_max_user_id"):
+        ticket.owner_max_user_id = ticket.user.max_user_id if ticket.user else ""  # type: ignore[attr-defined]
+        ticket.owner_full_name = (ticket.user.full_name or ticket.user.work_email) if ticket.user else ""  # type: ignore[attr-defined]
+        ticket.owner_work_email = ticket.user.work_email if ticket.user else ""  # type: ignore[attr-defined]
+        ticket.is_shared = False  # type: ignore[attr-defined]
     return ticket
 
 

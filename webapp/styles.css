@@ -16,7 +16,6 @@ body {
   color: var(--ink);
   background:
     radial-gradient(circle at top left, rgba(214, 116, 61, 0.15), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(14, 122, 109, 0.12), transparent 30%),
     var(--bg);
 }
 
@@ -89,6 +88,11 @@ body {
   font-weight: 600;
 }
 
+button.full-width,
+.full-width {
+  width: 100%;
+}
+
 .nav-btn {
   background: #ece1d1;
   color: var(--ink);
@@ -98,6 +102,10 @@ body {
 .nav-btn.active, .primary {
   background: linear-gradient(135deg, var(--accent), var(--button, #169c8b));
   color: white;
+}
+
+.card > .primary {
+  margin-top: 10px;
 }
 
 label {
@@ -126,6 +134,9 @@ input, select, textarea {
 .admin-panel-grid { margin-top: 20px; }
 .admin-subpanel { display: none; }
 .admin-subpanel.active { display: block; }
+.tickets-card {
+  overflow: hidden;
+}
 .subnav {
   display: flex;
   flex-wrap: wrap;
@@ -190,9 +201,30 @@ input, select, textarea {
   margin-top: 10px;
 }
 
+.admin-actions.wrap {
+  flex-wrap: wrap;
+}
+
 .admin-actions button {
   background: #efe5d7;
   color: var(--ink);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.toggle-row input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
+
+.ticket-item {
+  border-radius: 18px;
 }
 
 @media (max-width: 1024px) {
@@ -203,5 +235,22 @@ input, select, textarea {
   .grid.two,
   .grid.three {
     grid-template-columns: 1fr;
+  }
+
+  .content {
+    padding: 24px 18px 28px;
+  }
+
+  .sidebar {
+    padding: 18px;
+  }
+
+  .panel-head h1 {
+    font-size: 26px;
+  }
+
+  .card {
+    border-radius: 18px;
+    padding: 18px;
   }
 }

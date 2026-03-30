@@ -27,6 +27,8 @@ from .schemas import (
     HotelCreateRequest,
     HotelOut,
     HotelUpdateRequest,
+    IntegrationSettingsOut,
+    IntegrationSettingsUpdateRequest,
     MessageOut,
     RequestEmailCodeRequest,
     TicketCreateRequest,
@@ -36,6 +38,8 @@ from .schemas import (
     TopicCreateRequest,
     TopicOut,
     TopicUpdateRequest,
+    UserTicketAccessItemOut,
+    UserTicketAccessUpdateRequest,
     UserOut,
     UserUpdateRequest,
     VerifyEmailCodeRequest,
@@ -52,12 +56,14 @@ from .services import (
     enrich_tickets_status,
     get_app_settings,
     get_app_theme_settings,
+    get_integration_settings,
     get_catalog,
     get_user_by_max_id,
     init_defaults,
     list_user_tickets,
     list_users,
     list_audit_logs,
+    list_ticket_access_items,
     list_pending_status_notifications,
     log_admin_action,
     mark_notification_sent,
@@ -65,6 +71,8 @@ from .services import (
     require_active_user,
     require_admin_user,
     sync_ticket_statuses,
+    update_integration_settings,
+    update_ticket_access_items,
     update_user,
     update_app_settings,
     update_app_theme_settings,
@@ -241,6 +249,11 @@ async def app_settings(db: Session = Depends(get_db)) -> AppSettingsOut:
 @app.get("/api/v1/app-theme-settings", response_model=AppThemeSettingsOut)
 async def app_theme_settings(db: Session = Depends(get_db)) -> AppThemeSettingsOut:
     return AppThemeSettingsOut.model_validate(get_app_theme_settings(db))
+
+
+@app.get("/api/v1/integration-settings", response_model=IntegrationSettingsOut)
+async def integration_settings(db: Session = Depends(get_db)) -> IntegrationSettingsOut:
+    return IntegrationSettingsOut.model_validate(get_integration_settings(db))
 
 
 @app.post("/api/v1/tickets", response_model=TicketOut)
@@ -508,6 +521,62 @@ async def admin_update_app_theme_settings(
         },
     )
     return AppThemeSettingsOut.model_validate(settings_row)
+
+
+@app.put("/api/v1/admin/integration-settings", response_model=IntegrationSettingsOut)
+async def admin_update_integration_settings(
+    payload: IntegrationSettingsUpdateRequest,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+) -> IntegrationSettingsOut:
+    settings_row = update_integration_settings(
+        db,
+        extended_api_enabled=payload.extended_api_enabled,
+        plugin_label=payload.plugin_label,
+    )
+    log_admin_action(
+        db,
+        actor_user_id=admin_user.id,
+        action="update",
+        entity_type="integration_settings",
+        entity_id=str(settings_row.id),
+        details={
+            "extended_api_enabled": settings_row.extended_api_enabled,
+            "plugin_label": settings_row.plugin_label,
+        },
+    )
+    return IntegrationSettingsOut.model_validate(settings_row)
+
+
+@app.get("/api/v1/admin/users/{user_id}/ticket-access", response_model=list[UserTicketAccessItemOut])
+async def admin_user_ticket_access(user_id: int, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> list[UserTicketAccessItemOut]:
+    try:
+        items = list_ticket_access_items(db, user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return [UserTicketAccessItemOut(**item) for item in items]
+
+
+@app.put("/api/v1/admin/users/{user_id}/ticket-access", response_model=list[UserTicketAccessItemOut])
+async def admin_update_user_ticket_access(
+    user_id: int,
+    payload: UserTicketAccessUpdateRequest,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+) -> list[UserTicketAccessItemOut]:
+    try:
+        items = update_ticket_access_items(db, user_id, payload.owner_user_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    log_admin_action(
+        db,
+        actor_user_id=admin_user.id,
+        action="update",
+        entity_type="user_ticket_access",
+        entity_id=str(user_id),
+        details={"owner_user_ids": payload.owner_user_ids},
+    )
+    return [UserTicketAccessItemOut(**item) for item in items]
 
 
 @app.post("/api/v1/internal/ticket-status-sync", response_model=list[TicketStatusNotificationOut], dependencies=[Depends(require_internal_token)])
