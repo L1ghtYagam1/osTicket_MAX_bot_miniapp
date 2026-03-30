@@ -14,11 +14,11 @@
         <div class="brand-mark" id="brandMark">MS</div>
         <div>
           <div class="brand-title" id="brandTitle">MAX Support</div>
-          <div class="brand-subtitle" id="brandSubtitle">osTicket 1.18.1</div>
+          <div class="brand-subtitle" id="brandSubtitle" hidden></div>
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" id="sessionCard">
         <h3>Сессия</h3>
         <div id="maxLaunchStatus" class="result">MAX WebApp не обнаружен. Можно продолжить вручную.</div>
         <label>MAX User ID</label>
@@ -57,10 +57,9 @@
       <section class="panel" id="tab-create">
         <div class="panel-head">
           <h1>Новая заявка</h1>
-          <p>Создание заявки через backend и osTicket.</p>
         </div>
         <div class="grid two">
-          <div class="card">
+          <div class="card" id="createFormCard">
             <label>Отель</label>
             <select id="hotelSelect"></select>
             <label>Категория</label>
@@ -72,9 +71,14 @@
             <button id="createTicketBtn" class="primary">Отправить заявку</button>
             <div id="createResult" class="result"></div>
           </div>
-          <div class="card">
+          <div class="card" id="createHintCard">
             <h3>Подсказка</h3>
-            <p>Категории и темы берутся из backend, поэтому админ может менять их без правки кода.</p>
+            <p id="createHintText"></p>
+          </div>
+          <div class="card" id="createSuccessCard" hidden>
+            <h3>Ваша заявка создана</h3>
+            <div id="createSuccessText" class="result"></div>
+            <button id="createAnotherBtn" class="primary">Создать ещё заявку</button>
           </div>
         </div>
       </section>
@@ -103,8 +107,8 @@
             </div>
             <label>Название</label>
             <input id="brandNameInput" placeholder="Название приложения">
-            <label>Подзаголовок</label>
-            <input id="brandSubtitleInput" placeholder="Подзаголовок">
+            <label>Подсказка пользователю</label>
+            <input id="brandSubtitleInput" placeholder="Текст подсказки на экране создания заявки">
             <label>Короткая метка</label>
             <input id="brandMarkInput" placeholder="MS">
             <label>URL иконки</label>

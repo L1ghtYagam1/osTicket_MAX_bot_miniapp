@@ -68,6 +68,10 @@ const api = {
     return this.request("/api/v1/app-settings");
   },
 
+  getUserByMaxId(maxUserId) {
+    return this.request(`/api/v1/users/by-max/${encodeURIComponent(maxUserId)}`);
+  },
+
   getTickets(maxUserId) {
     return this.request(`/api/v1/tickets?max_user_id=${encodeURIComponent(maxUserId)}`);
   },
@@ -170,7 +174,9 @@ function applyBranding() {
 
   document.title = settings.brand_name || "MAX Support";
   byId("brandTitle").textContent = settings.brand_name || "MAX Support";
-  byId("brandSubtitle").textContent = settings.brand_subtitle || "";
+  byId("brandSubtitle").textContent = "";
+  byId("createHintText").textContent = settings.brand_subtitle || "";
+  byId("createHintCard").hidden = !Boolean(settings.brand_subtitle);
 
   const markNode = byId("brandMark");
   if (settings.brand_icon_url) {
@@ -222,6 +228,24 @@ function updateBindVisibility() {
   }
 }
 
+function updateSessionVisibility() {
+  const sessionCard = byId("sessionCard");
+  if (!sessionCard) return;
+  sessionCard.hidden = Boolean(state.user && state.user.work_email);
+}
+
+function applyKnownUser(user) {
+  if (!user) return;
+  state.user = user;
+  state.maxUserId = String(user.max_user_id || state.maxUserId);
+  state.fullName = String(user.full_name || state.fullName);
+  state.isAdmin = Boolean(user.is_admin);
+  persistSession();
+  updateAdminVisibility();
+  updateBindVisibility();
+  updateSessionVisibility();
+}
+
 function persistSession() {
   localStorage.setItem("max_user_id", state.maxUserId);
   localStorage.setItem("full_name", state.fullName);
@@ -247,24 +271,33 @@ async function validateStoredSession() {
   if (!state.accessToken) {
     state.isAdmin = false;
     updateAdminVisibility();
+    updateBindVisibility();
+    updateSessionVisibility();
     return;
   }
   try {
     const me = await api.getMe();
-    state.user = me;
-    state.maxUserId = String(me.max_user_id || state.maxUserId);
-    state.fullName = String(me.full_name || state.fullName);
-    state.isAdmin = Boolean(me.is_admin);
-    persistSession();
+    applyKnownUser(me);
   } catch (error) {
     console.warn("Stored session is invalid", error);
-    state.accessToken = "";
     state.isAdmin = false;
     state.user = null;
-    persistSession();
   } finally {
     updateAdminVisibility();
     updateBindVisibility();
+    updateSessionVisibility();
+  }
+}
+
+async function hydrateKnownUser() {
+  if (!state.maxUserId) return;
+  try {
+    const user = await api.getUserByMaxId(state.maxUserId);
+    applyKnownUser(user);
+  } catch (error) {
+    console.warn("Known user not found", error);
+    updateBindVisibility();
+    updateSessionVisibility();
   }
 }
 
@@ -392,11 +425,8 @@ async function bindEmail() {
     email,
     code,
   });
-  state.user = data;
-  state.isAdmin = Boolean(data.is_admin);
+  applyKnownUser(data);
   result.textContent = `Почта подтверждена: ${data.work_email}`;
-  updateAdminVisibility();
-  updateBindVisibility();
   activateTab("create");
 }
 
@@ -415,7 +445,11 @@ async function createTicket() {
     description: byId("descriptionInput").value.trim(),
   };
   const data = await api.createTicket(payload);
-  result.textContent = `Заявка создана. ID: ${data.external_id}. Статус: ${data.current_status}`;
+  result.textContent = "";
+  byId("createSuccessText").textContent = `ID заявки: ${data.external_id}. Статус: ${data.current_status}`;
+  byId("createFormCard").hidden = true;
+  byId("createHintCard").hidden = true;
+  byId("createSuccessCard").hidden = false;
   byId("descriptionInput").value = "";
 }
 
@@ -531,10 +565,18 @@ async function saveBrandingSettings() {
     });
     state.appSettings = data;
     applyBranding();
+    resetCreateFormVisibility();
     result.textContent = "Настройки брендинга сохранены.";
   } catch (error) {
     result.textContent = error.message;
   }
+}
+
+function resetCreateFormVisibility() {
+  byId("createFormCard").hidden = false;
+  byId("createHintCard").hidden = !Boolean(state.appSettings && state.appSettings.brand_subtitle);
+  byId("createSuccessCard").hidden = true;
+  byId("createSuccessText").textContent = "";
 }
 
 window.editUser = async function editUser(id) {
@@ -661,8 +703,14 @@ async function init() {
   byId("refreshUsersBtn").addEventListener("click", loadAdmin);
   byId("refreshAuditBtn").addEventListener("click", loadAdmin);
   byId("saveBrandingBtn").addEventListener("click", saveBrandingSettings);
+  byId("createAnotherBtn").addEventListener("click", () => {
+    resetCreateFormVisibility();
+    activateTab("create");
+  });
 
   await loadCatalog();
+  await hydrateKnownUser();
+  resetCreateFormVisibility();
   if (state.user && state.user.work_email) {
     activateTab("create");
   }
