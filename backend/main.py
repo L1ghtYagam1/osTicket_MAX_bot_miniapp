@@ -90,12 +90,12 @@ from .session_auth import SessionPrincipal, create_session_token, verify_session
 settings = get_settings()
 WEBAPP_DIR = Path(__file__).resolve().parent.parent / "webapp"
 UPLOADS_DIR = Path(__file__).resolve().parent.parent / "data" / "uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
-    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     with SessionLocal() as db:
         init_defaults(db)
     yield
