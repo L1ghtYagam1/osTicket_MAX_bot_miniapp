@@ -627,11 +627,12 @@ function renderTickets(tickets) {
 }
 
 function closeTicketDetails() {
-  byId("ticketDetailsCard").hidden = true;
-  byId("ticketDetailsTitle").textContent = "Р—Р°СЏРІРєР°";
-  byId("ticketDetailsMeta").textContent = "";
-  byId("ticketDetailsDescription").textContent = "";
-  byId("ticketThreadList").innerHTML = "";
+  byId("ticketDetailsPageTitle").textContent = "Заявка";
+  byId("ticketDetailsPageInnerTitle").textContent = "Заявка";
+  byId("ticketDetailsPageMeta").textContent = "";
+  byId("ticketDetailsPageDescription").textContent = "";
+  byId("ticketThreadPageList").innerHTML = "";
+  activateTab("tickets");
 }
 
 function renderTicketThread(thread) {
@@ -653,19 +654,20 @@ function renderTicketThread(thread) {
 
 window.openTicketDetails = async function openTicketDetails(externalId) {
   setSession();
-  const card = byId("ticketDetailsCard");
-  const meta = byId("ticketDetailsMeta");
-  const description = byId("ticketDetailsDescription");
-  const threadRoot = byId("ticketThreadList");
-  byId("ticketDetailsTitle").textContent = `Р—Р°СЏРІРєР° #${externalId}`;
+  const meta = byId("ticketDetailsPageMeta");
+  const description = byId("ticketDetailsPageDescription");
+  const threadRoot = byId("ticketThreadPageList");
+  byId("ticketDetailsPageTitle").textContent = `Заявка #${externalId}`;
+  byId("ticketDetailsPageInnerTitle").textContent = `Заявка #${externalId}`;
   meta.textContent = "Р—Р°РіСЂСѓР·РєР°...";
   description.textContent = "";
   threadRoot.innerHTML = "";
-  card.hidden = false;
+  activateTab("ticket-view");
 
   try {
     const data = await api.getTicketDetails(state.maxUserId, externalId);
-    byId("ticketDetailsTitle").textContent = `${data.subject} #${data.external_id}`;
+    byId("ticketDetailsPageTitle").textContent = `${data.subject} #${data.external_id}`;
+    byId("ticketDetailsPageInnerTitle").textContent = `${data.subject} #${data.external_id}`;
     meta.textContent = `РЎС‚Р°С‚СѓСЃ: ${data.current_status}${data.owner_full_name ? ` | Р’Р»Р°РґРµР»РµС†: ${data.owner_full_name}` : ""}`;
     description.textContent = data.description || "";
     threadRoot.innerHTML = renderTicketThread(data.thread || []);
@@ -1043,7 +1045,7 @@ async function init() {
   byId("bindEmailBtn").addEventListener("click", bindEmail);
   byId("createTicketBtn").addEventListener("click", createTicket);
   byId("refreshTicketsBtn").addEventListener("click", refreshTickets);
-  byId("closeTicketDetailsBtn").addEventListener("click", closeTicketDetails);
+  byId("closeTicketDetailsPageBtn").addEventListener("click", closeTicketDetails);
   byId("categorySelect").addEventListener("change", fillTopics);
   byId("addHotelBtn").addEventListener("click", addHotel);
   byId("addCategoryBtn").addEventListener("click", addCategory);

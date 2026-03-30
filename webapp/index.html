@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MAX Support</title>
   <script src="https://st.max.ru/js/max-web-app.js"></script>
-  <link rel="stylesheet" href="/app/assets/styles.css?v=20260330-2">
+  <link rel="stylesheet" href="/app/assets/styles.css?v=20260330-3">
 </head>
 <body>
   <div class="shell">
@@ -99,6 +99,21 @@
             <div id="ticketThreadList" class="list"></div>
           </div>
           <div id="ticketsList" class="list"></div>
+        </div>
+      </section>
+
+      <section class="panel" id="tab-ticket-view">
+        <div class="panel-head">
+          <h1 id="ticketDetailsPageTitle">Заявка</h1>
+        </div>
+        <div class="card ticket-details-card">
+          <div class="card-toolbar">
+            <h3 id="ticketDetailsPageInnerTitle">Заявка</h3>
+            <button id="closeTicketDetailsPageBtn">Назад к списку</button>
+          </div>
+          <div id="ticketDetailsPageMeta" class="result"></div>
+          <div id="ticketDetailsPageDescription" class="ticket-description"></div>
+          <div id="ticketThreadPageList" class="list"></div>
         </div>
       </section>
 
@@ -253,6 +268,6 @@
     </main>
   </div>
 
-  <script src="/app/assets/app.js?v=20260330-2"></script>
+  <script src="/app/assets/app.js?v=20260330-3"></script>
 </body>
 </html>
