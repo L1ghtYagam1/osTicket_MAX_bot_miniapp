@@ -185,7 +185,14 @@ async def root() -> RedirectResponse:
 
 @app.get("/app")
 async def webapp_index() -> FileResponse:
-    return FileResponse(WEBAPP_DIR / "index.html")
+    return FileResponse(
+        WEBAPP_DIR / "index.html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @app.post("/api/v1/auth/bind-email", response_model=UserOut)

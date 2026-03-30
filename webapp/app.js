@@ -611,14 +611,14 @@ async function createTicket() {
 function renderTickets(tickets) {
   const root = byId("ticketsList");
   root.innerHTML = tickets.map((ticket) => `
-    <div class="list-item ticket-item">
+    <div class="list-item ticket-item" onclick="openTicketDetails('${ticket.external_id}')">
       <div class="list-head">
         <span>#${ticket.external_id}</span>
         <span>${ticket.current_status}</span>
       </div>
       <div>${ticket.subject}</div>
       <div class="ticket-actions">
-        <button class="primary full-width" onclick="openTicketDetails('${ticket.external_id}')">РћС‚РєСЂС‹С‚СЊ</button>
+        <button class="primary full-width" onclick="event.stopPropagation(); openTicketDetails('${ticket.external_id}')">РћС‚РєСЂС‹С‚СЊ</button>
       </div>
       <div class="list-meta">${ticket.description}</div>
       ${ticket.is_shared ? `<div class="list-meta">Владелец: ${ticket.owner_full_name || ticket.owner_work_email}</div>` : ""}
