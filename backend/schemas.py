@@ -231,6 +231,11 @@ class MessageOut(BaseModel):
     message: str
 
 
+class UploadedAssetOut(BaseModel):
+    url: str
+    filename: str
+
+
 class TicketStatusOut(BaseModel):
     external_id: str
     status: str

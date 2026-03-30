@@ -184,6 +184,31 @@ const api = {
     });
   },
 
+  async adminUploadIcon(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch("/api/v1/admin/upload-icon", {
+      method: "POST",
+      headers: {
+        ...(state.accessToken ? { Authorization: `Bearer ${state.accessToken}` } : {}),
+      },
+      body: formData,
+    });
+    const text = await response.text();
+    let data = {};
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { detail: text };
+      }
+    }
+    if (!response.ok) {
+      throw new Error(data.detail || text || `HTTP ${response.status}`);
+    }
+    return data;
+  },
+
   adminUpdateAppThemeSettings(payload) {
     return this.request("/api/v1/admin/app-theme-settings", {
       method: "PUT",
@@ -701,6 +726,23 @@ async function saveBrandingSettings() {
   }
 }
 
+async function uploadBrandIcon() {
+  const result = byId("brandingResult");
+  const input = byId("brandIconFileInput");
+  const file = input.files && input.files[0];
+  if (!file) {
+    result.textContent = "Сначала выберите файл иконки.";
+    return;
+  }
+  try {
+    const uploaded = await api.adminUploadIcon(file);
+    byId("brandIconUrlInput").value = uploaded.url;
+    result.textContent = `Иконка загружена: ${uploaded.filename}`;
+  } catch (error) {
+    result.textContent = error.message;
+  }
+}
+
 async function saveThemeSettings() {
   const result = byId("themeResult");
   try {
@@ -942,6 +984,7 @@ async function init() {
   byId("refreshUsersBtn").addEventListener("click", loadAdmin);
   byId("refreshAuditBtn").addEventListener("click", loadAdmin);
   byId("saveBrandingBtn").addEventListener("click", saveBrandingSettings);
+  byId("uploadBrandIconBtn").addEventListener("click", uploadBrandIcon);
   byId("saveThemeBtn").addEventListener("click", saveThemeSettings);
   byId("saveAppearanceBtn").addEventListener("click", saveAppearanceSettings);
   byId("saveIntegrationBtn").addEventListener("click", saveIntegrationSettings);

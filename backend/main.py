@@ -1,7 +1,8 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -33,6 +34,7 @@ from .schemas import (
     IntegrationSettingsUpdateRequest,
     MessageOut,
     RequestEmailCodeRequest,
+    UploadedAssetOut,
     TicketCreateRequest,
     TicketStatusNotificationOut,
     TicketOut,
@@ -87,11 +89,13 @@ from .session_auth import SessionPrincipal, create_session_token, verify_session
 
 settings = get_settings()
 WEBAPP_DIR = Path(__file__).resolve().parent.parent / "webapp"
+UPLOADS_DIR = Path(__file__).resolve().parent.parent / "data" / "uploads"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     with SessionLocal() as db:
         init_defaults(db)
     yield
@@ -106,6 +110,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/app/assets", StaticFiles(directory=WEBAPP_DIR), name="webapp-assets")
+app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 
 def _extract_bearer_token(authorization: str) -> str:
@@ -501,6 +506,31 @@ async def admin_update_app_settings(
         },
     )
     return AppSettingsOut.model_validate(settings_row)
+
+
+@app.post("/api/v1/admin/upload-icon", response_model=UploadedAssetOut)
+async def admin_upload_icon(
+    file: UploadFile = File(...),
+    admin_user: User = Depends(require_admin),
+) -> UploadedAssetOut:
+    content_type = (file.content_type or "").lower()
+    if content_type not in {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml"}:
+        raise HTTPException(status_code=400, detail="Поддерживаются только PNG, JPG, WEBP и SVG")
+
+    original_name = file.filename or "icon"
+    extension = Path(original_name).suffix.lower()
+    if extension not in {".png", ".jpg", ".jpeg", ".webp", ".svg"}:
+        extension = ".png"
+
+    file_name = f"brand-icon-{uuid4().hex}{extension}"
+    target_path = UPLOADS_DIR / file_name
+    payload = await file.read()
+    if not payload:
+        raise HTTPException(status_code=400, detail="Файл пустой")
+    if len(payload) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Файл слишком большой. Максимум 5 МБ")
+    target_path.write_bytes(payload)
+    return UploadedAssetOut(url=f"/uploads/{file_name}", filename=file_name)
 
 
 @app.put("/api/v1/admin/app-theme-settings", response_model=AppThemeSettingsOut)
