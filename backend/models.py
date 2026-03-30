@@ -29,6 +29,16 @@ class User(Base, TimestampMixin):
     audit_logs: Mapped[list["AdminAuditLog"]] = relationship(back_populates="actor")
 
 
+class AppSettings(Base, TimestampMixin):
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    brand_name: Mapped[str] = mapped_column(String(255), default="MAX Support")
+    brand_subtitle: Mapped[str] = mapped_column(String(255), default="osTicket 1.18.1")
+    brand_mark: Mapped[str] = mapped_column(String(16), default="MS")
+    brand_icon_url: Mapped[str] = mapped_column(String(1000), default="")
+
+
 class Hotel(Base, TimestampMixin):
     __tablename__ = "hotels"
 

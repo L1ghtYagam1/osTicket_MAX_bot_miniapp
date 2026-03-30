@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 from .config import get_settings
 from .defaults import DEFAULT_CATEGORIES, DEFAULT_HOTELS
 from .mailer import send_verification_email
-from .models import AdminAuditLog, Category, EmailVerification, Hotel, Ticket, TicketStatusNotification, Topic, User
+from .models import AdminAuditLog, AppSettings, Category, EmailVerification, Hotel, Ticket, TicketStatusNotification, Topic, User
 from .osticket import OsTicketClient
 
 
@@ -19,6 +19,9 @@ osticket_client = OsTicketClient()
 
 
 def init_defaults(db: Session) -> None:
+    if db.get(AppSettings, 1) is None:
+        db.add(AppSettings(id=1))
+
     if not db.scalar(select(Hotel.id).limit(1)):
         for hotel_name in DEFAULT_HOTELS:
             db.add(Hotel(name=hotel_name))
@@ -140,7 +143,44 @@ def get_catalog(db: Session) -> tuple[list[Hotel], list[Category]]:
 
 
 def get_user_by_max_id(db: Session, max_user_id: str) -> User | None:
-    return db.scalar(select(User).where(User.max_user_id == max_user_id))
+    user = db.scalar(select(User).where(User.max_user_id == max_user_id))
+    if user is None:
+        return None
+
+    should_be_admin = max_user_id in settings.admin_max_ids
+    if user.is_admin != should_be_admin:
+        user.is_admin = should_be_admin
+        db.commit()
+        db.refresh(user)
+    return user
+
+
+def get_app_settings(db: Session) -> AppSettings:
+    settings_row = db.get(AppSettings, 1)
+    if settings_row is None:
+        settings_row = AppSettings(id=1)
+        db.add(settings_row)
+        db.commit()
+        db.refresh(settings_row)
+    return settings_row
+
+
+def update_app_settings(
+    db: Session,
+    *,
+    brand_name: str,
+    brand_subtitle: str,
+    brand_mark: str,
+    brand_icon_url: str,
+) -> AppSettings:
+    settings_row = get_app_settings(db)
+    settings_row.brand_name = brand_name
+    settings_row.brand_subtitle = brand_subtitle
+    settings_row.brand_mark = brand_mark
+    settings_row.brand_icon_url = brand_icon_url
+    db.commit()
+    db.refresh(settings_row)
+    return settings_row
 
 
 def require_active_user(db: Session, max_user_id: str) -> User:

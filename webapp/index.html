@@ -11,10 +11,10 @@
   <div class="shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark">MS</div>
+        <div class="brand-mark" id="brandMark">MS</div>
         <div>
-          <div class="brand-title">MAX Support</div>
-          <div class="brand-subtitle">osTicket 1.18.1</div>
+          <div class="brand-title" id="brandTitle">MAX Support</div>
+          <div class="brand-subtitle" id="brandSubtitle">osTicket 1.18.1</div>
         </div>
       </div>
 
@@ -43,6 +43,7 @@
           <p>Сначала отправьте код на рабочую почту, затем подтвердите его.</p>
         </div>
         <div class="card">
+          <div id="bindSummary" class="result" hidden></div>
           <label>Рабочая почта</label>
           <input id="emailInput" placeholder="name@company.ru">
           <button id="requestCodeBtn" class="primary">Отправить код</button>
@@ -95,6 +96,21 @@
           <p>Редактирование пользователей, справочников и просмотр аудита.</p>
         </div>
         <div class="grid three">
+          <div class="card">
+            <div class="card-toolbar">
+              <h3>Брендинг</h3>
+              <button id="saveBrandingBtn">Сохранить</button>
+            </div>
+            <label>Название</label>
+            <input id="brandNameInput" placeholder="Название приложения">
+            <label>Подзаголовок</label>
+            <input id="brandSubtitleInput" placeholder="Подзаголовок">
+            <label>Короткая метка</label>
+            <input id="brandMarkInput" placeholder="MS">
+            <label>URL иконки</label>
+            <input id="brandIconUrlInput" placeholder="https://...">
+            <div id="brandingResult" class="result"></div>
+          </div>
           <div class="card">
             <div class="card-toolbar">
               <h3>Пользователи</h3>

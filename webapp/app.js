@@ -3,6 +3,8 @@ const state = {
   fullName: localStorage.getItem("full_name") || "",
   accessToken: localStorage.getItem("access_token") || "",
   isAdmin: false,
+  user: null,
+  appSettings: null,
   catalog: null,
   webAppReady: false,
 };
@@ -60,6 +62,10 @@ const api = {
 
   getCatalog() {
     return this.request("/api/v1/catalog");
+  },
+
+  getAppSettings() {
+    return this.request("/api/v1/app-settings");
   },
 
   getTickets(maxUserId) {
@@ -141,6 +147,13 @@ const api = {
   adminListAuditLogs() {
     return this.request("/api/v1/admin/audit-logs");
   },
+
+  adminUpdateAppSettings(payload) {
+    return this.request("/api/v1/admin/app-settings", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
 };
 
 function byId(id) {
@@ -149,6 +162,27 @@ function byId(id) {
 
 function setLaunchStatus(message) {
   byId("maxLaunchStatus").textContent = message;
+}
+
+function applyBranding() {
+  const settings = state.appSettings;
+  if (!settings) return;
+
+  document.title = settings.brand_name || "MAX Support";
+  byId("brandTitle").textContent = settings.brand_name || "MAX Support";
+  byId("brandSubtitle").textContent = settings.brand_subtitle || "";
+
+  const markNode = byId("brandMark");
+  if (settings.brand_icon_url) {
+    markNode.innerHTML = `<img src="${settings.brand_icon_url}" alt="brand icon" style="width:100%;height:100%;object-fit:cover;border-radius:16px;">`;
+  } else {
+    markNode.textContent = settings.brand_mark || "MS";
+  }
+
+  if (byId("brandNameInput")) byId("brandNameInput").value = settings.brand_name || "";
+  if (byId("brandSubtitleInput")) byId("brandSubtitleInput").value = settings.brand_subtitle || "";
+  if (byId("brandMarkInput")) byId("brandMarkInput").value = settings.brand_mark || "";
+  if (byId("brandIconUrlInput")) byId("brandIconUrlInput").value = settings.brand_icon_url || "";
 }
 
 function updateAdminVisibility() {
@@ -161,7 +195,30 @@ function updateAdminVisibility() {
   adminPanel.hidden = !shouldShowAdmin;
 
   if (!shouldShowAdmin && adminNavBtn.classList.contains("active")) {
-    activateTab("bind");
+    activateTab(state.user && state.user.work_email ? "create" : "bind");
+  }
+}
+
+function updateBindVisibility() {
+  const bindNavBtn = document.querySelector('.nav-btn[data-tab="bind"]');
+  const bindPanel = byId("tab-bind");
+  const bindSummary = byId("bindSummary");
+  if (!bindNavBtn || !bindPanel || !bindSummary) return;
+
+  const hasVerifiedEmail = Boolean(state.user && state.user.work_email);
+  bindNavBtn.hidden = hasVerifiedEmail;
+  bindPanel.hidden = hasVerifiedEmail;
+
+  if (hasVerifiedEmail) {
+    byId("emailInput").value = state.user.work_email || "";
+    bindSummary.hidden = false;
+    bindSummary.textContent = `Рабочая почта уже подтверждена: ${state.user.work_email}`;
+    if (bindNavBtn.classList.contains("active")) {
+      activateTab("create");
+    }
+  } else {
+    bindSummary.hidden = true;
+    bindSummary.textContent = "";
   }
 }
 
@@ -194,6 +251,7 @@ async function validateStoredSession() {
   }
   try {
     const me = await api.getMe();
+    state.user = me;
     state.maxUserId = String(me.max_user_id || state.maxUserId);
     state.fullName = String(me.full_name || state.fullName);
     state.isAdmin = Boolean(me.is_admin);
@@ -202,9 +260,11 @@ async function validateStoredSession() {
     console.warn("Stored session is invalid", error);
     state.accessToken = "";
     state.isAdmin = false;
+    state.user = null;
     persistSession();
   } finally {
     updateAdminVisibility();
+    updateBindVisibility();
   }
 }
 
@@ -332,7 +392,12 @@ async function bindEmail() {
     email,
     code,
   });
+  state.user = data;
+  state.isAdmin = Boolean(data.is_admin);
   result.textContent = `Почта подтверждена: ${data.work_email}`;
+  updateAdminVisibility();
+  updateBindVisibility();
+  activateTab("create");
 }
 
 async function createTicket() {
@@ -429,7 +494,7 @@ function renderAuditLogs(items) {
 
 async function loadAdmin() {
   if (!state.isAdmin) {
-    activateTab("bind");
+    activateTab(state.user && state.user.work_email ? "create" : "bind");
     return;
   }
   try {
@@ -452,6 +517,23 @@ async function loadAdmin() {
     byId("categoriesAdminList").innerHTML = message;
     byId("topicsAdminList").innerHTML = message;
     byId("auditAdminList").innerHTML = message;
+  }
+}
+
+async function saveBrandingSettings() {
+  const result = byId("brandingResult");
+  try {
+    const data = await api.adminUpdateAppSettings({
+      brand_name: byId("brandNameInput").value.trim(),
+      brand_subtitle: byId("brandSubtitleInput").value.trim(),
+      brand_mark: byId("brandMarkInput").value.trim(),
+      brand_icon_url: byId("brandIconUrlInput").value.trim(),
+    });
+    state.appSettings = data;
+    applyBranding();
+    result.textContent = "Настройки брендинга сохранены.";
+  } catch (error) {
+    result.textContent = error.message;
   }
 }
 
@@ -545,17 +627,20 @@ async function addTopic() {
 }
 
 async function init() {
+  state.appSettings = await api.getAppSettings();
+  applyBranding();
   hydrateSession();
   await validateStoredSession();
   await hydrateFromMaxWebApp();
   await validateStoredSession();
   hydrateSession();
   updateAdminVisibility();
+  updateBindVisibility();
 
   document.querySelectorAll(".nav-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       if (btn.dataset.tab === "admin" && !state.isAdmin) {
-        activateTab("bind");
+        activateTab(state.user && state.user.work_email ? "create" : "bind");
         return;
       }
       activateTab(btn.dataset.tab);
@@ -575,8 +660,12 @@ async function init() {
   byId("addTopicBtn").addEventListener("click", addTopic);
   byId("refreshUsersBtn").addEventListener("click", loadAdmin);
   byId("refreshAuditBtn").addEventListener("click", loadAdmin);
+  byId("saveBrandingBtn").addEventListener("click", saveBrandingSettings);
 
   await loadCatalog();
+  if (state.user && state.user.work_email) {
+    activateTab("create");
+  }
 }
 
 init().catch((error) => {

@@ -33,6 +33,23 @@ class WebAppSessionOut(BaseModel):
     access_token: str
 
 
+class AppSettingsOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    brand_name: str
+    brand_subtitle: str
+    brand_mark: str
+    brand_icon_url: str
+
+
+class AppSettingsUpdateRequest(BaseModel):
+    brand_name: str = Field(min_length=1, max_length=255)
+    brand_subtitle: str = Field(min_length=0, max_length=255)
+    brand_mark: str = Field(min_length=1, max_length=16)
+    brand_icon_url: str = Field(min_length=0, max_length=1000)
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

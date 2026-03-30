@@ -14,6 +14,8 @@ from .max_webapp import validate_init_data
 from .models import Category, Hotel, Topic, User
 from .schemas import (
     AdminAuditLogOut,
+    AppSettingsOut,
+    AppSettingsUpdateRequest,
     BindEmailRequest,
     CatalogOut,
     CategoryCreateRequest,
@@ -46,6 +48,7 @@ from .services import (
     create_topic_record,
     enrich_ticket_status,
     enrich_tickets_status,
+    get_app_settings,
     get_catalog,
     get_user_by_max_id,
     init_defaults,
@@ -60,6 +63,7 @@ from .services import (
     require_admin_user,
     sync_ticket_statuses,
     update_user,
+    update_app_settings,
     verify_email_code,
 )
 from .session_auth import SessionPrincipal, create_session_token, verify_session_token
@@ -223,6 +227,11 @@ async def catalog(db: Session = Depends(get_db)) -> CatalogOut:
         hotels=[HotelOut.model_validate(item) for item in hotels],
         categories=[CategoryOut.model_validate(item) for item in categories],
     )
+
+
+@app.get("/api/v1/app-settings", response_model=AppSettingsOut)
+async def app_settings(db: Session = Depends(get_db)) -> AppSettingsOut:
+    return AppSettingsOut.model_validate(get_app_settings(db))
 
 
 @app.post("/api/v1/tickets", response_model=TicketOut)
@@ -432,6 +441,35 @@ async def admin_update_user(user_id: int, payload: UserUpdateRequest, db: Sessio
 @app.get("/api/v1/admin/audit-logs", response_model=list[AdminAuditLogOut], dependencies=[Depends(require_admin)])
 async def admin_audit_logs(db: Session = Depends(get_db)) -> list[AdminAuditLogOut]:
     return [AdminAuditLogOut.model_validate(item) for item in list_audit_logs(db)]
+
+
+@app.put("/api/v1/admin/app-settings", response_model=AppSettingsOut)
+async def admin_update_app_settings(
+    payload: AppSettingsUpdateRequest,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+) -> AppSettingsOut:
+    settings_row = update_app_settings(
+        db,
+        brand_name=payload.brand_name,
+        brand_subtitle=payload.brand_subtitle,
+        brand_mark=payload.brand_mark,
+        brand_icon_url=payload.brand_icon_url,
+    )
+    log_admin_action(
+        db,
+        actor_user_id=admin_user.id,
+        action="update",
+        entity_type="app_settings",
+        entity_id=str(settings_row.id),
+        details={
+            "brand_name": settings_row.brand_name,
+            "brand_subtitle": settings_row.brand_subtitle,
+            "brand_mark": settings_row.brand_mark,
+            "brand_icon_url": settings_row.brand_icon_url,
+        },
+    )
+    return AppSettingsOut.model_validate(settings_row)
 
 
 @app.post("/api/v1/internal/ticket-status-sync", response_model=list[TicketStatusNotificationOut], dependencies=[Depends(require_internal_token)])
