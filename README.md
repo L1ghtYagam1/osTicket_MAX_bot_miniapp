@@ -114,11 +114,11 @@ MAX_API_BASE_URL=https://platform-api.max.ru
 MAX_POLL_TIMEOUT=25
 BACKEND_API_URL=http://backend:8000/api/v1
 BACKEND_TIMEOUT=20
-PUBLIC_DOMAIN=maxapp.example.com
-PUBLIC_WEBAPP_URL=https://maxapp.example.com/app
-PUBLIC_API_BASE_URL=https://maxapp.example.com/api/v1
+PUBLIC_DOMAIN=supbot.ukprovence.ru
+PUBLIC_WEBAPP_URL=https://supbot.ukprovence.ru/app
+PUBLIC_API_BASE_URL=https://supbot.ukprovence.ru/api/v1
 MAX_WEBAPP_AUTH_MAX_AGE_SECONDS=86400
-MAX_SESSION_SECRET=change-me-for-production
+MAX_SESSION_SECRET=CHANGE_ME_TO_A_LONG_RANDOM_SECRET
 MAX_SESSION_TTL_SECONDS=0
 
 
@@ -126,10 +126,10 @@ MAX_SESSION_TTL_SECONDS=0
 # OSTICKET
 # =========================
 
-OSTICKET_API_URL=https://your-osticket.example/api/tickets.json
+OSTICKET_API_URL=https://osticket.ukprovence.ru/api/tickets.json
 OSTICKET_API_KEY=
 OSTICKET_REQUEST_TIMEOUT=20
-OSTICKET_STATUS_API_URL=
+OSTICKET_STATUS_API_URL=https://osticket.ukprovence.ru/api/tickets/{ticket_id}.json
 
 
 # =========================
@@ -246,18 +246,18 @@ notepad .env
 
 ```env
 MAX_BOT_TOKEN=
-PUBLIC_DOMAIN=maxapp.example.com
-OSTICKET_API_URL=https://your-osticket.example/api/tickets.json
+PUBLIC_DOMAIN=supbot.ukprovence.ru
+OSTICKET_API_URL=https://osticket.ukprovence.ru/api/tickets.json
 OSTICKET_API_KEY=
-OSTICKET_STATUS_API_URL=
-INTERNAL_API_TOKEN=change-internal-api-token
+OSTICKET_STATUS_API_URL=https://osticket.ukprovence.ru/api/tickets/{ticket_id}.json
+INTERNAL_API_TOKEN=CHANGE_ME_TO_A_LONG_RANDOM_INTERNAL_TOKEN
 ADMIN_MAX_IDS=
 ```
 
 `MAX_BOT_TOKEN` используется не только ботом, но и backend для серверной валидации запуска mini app из MAX.
-`MAX_SESSION_SECRET` используется backend для подписи web session token. В production задайте своё длинное секретное значение.
+`MAX_SESSION_SECRET` используется backend для подписи web session token. В production задайте своё длинное случайное секретное значение.
 `MAX_SESSION_TTL_SECONDS=0` означает бессрочную web-сессию: пользователь подтверждает рабочую почту один раз и потом не входит повторно, пока не очищен браузер, не сменён `MAX_SESSION_SECRET` или доступ не отозван вручную.
-`INTERNAL_API_TOKEN` используется ботом и backend для доставки уведомлений о смене статусов.
+`INTERNAL_API_TOKEN` используется ботом и backend для доставки уведомлений о смене статусов. Тоже задайте длинным случайным значением.
 `ALLOWED_EMAIL_DOMAINS` ограничивает подтверждение только рабочими почтами компании. Укажите один или несколько доменов через запятую, например `ukprovence.ru,hotel-a.ru,hotel-b.ru`.
 
 Если проект запускается локально без отдельного reverse proxy, значения по умолчанию для `BACKEND_API_URL` и `DATABASE_URL` можно не менять.
@@ -301,20 +301,20 @@ docker-compose down || docker compose down
 
 Рекомендуемая схема доменов:
 
-- `https://maxapp.example.com/app` — mini app для MAX
-- `https://maxapp.example.com/api/v1` — backend API
-- `https://osticket.example.com` — отдельный домен osTicket
+- `https://supbot.ukprovence.ru/app` — mini app для MAX
+- `https://supbot.ukprovence.ru/api/v1` — backend API
+- `https://osticket.ukprovence.ru` — отдельный домен osTicket
 
 Минимальный пример `.env` для такой схемы:
 
 ```env
 BACKEND_API_URL=http://backend:8000/api/v1
-PUBLIC_DOMAIN=maxapp.example.com
-PUBLIC_WEBAPP_URL=https://maxapp.example.com/app
-PUBLIC_API_BASE_URL=https://maxapp.example.com/api/v1
-CORS_ORIGINS_RAW=https://maxapp.example.com
-OSTICKET_API_URL=https://osticket.example.com/api/tickets.json
-OSTICKET_STATUS_API_URL=https://osticket.example.com/api/tickets/{ticket_id}.json
+PUBLIC_DOMAIN=supbot.ukprovence.ru
+PUBLIC_WEBAPP_URL=https://supbot.ukprovence.ru/app
+PUBLIC_API_BASE_URL=https://supbot.ukprovence.ru/api/v1
+CORS_ORIGINS_RAW=https://supbot.ukprovence.ru
+OSTICKET_API_URL=https://osticket.ukprovence.ru/api/tickets.json
+OSTICKET_STATUS_API_URL=https://osticket.ukprovence.ru/api/tickets/{ticket_id}.json
 ```
 
 Проект уже подготовлен под Caddy. Рабочий конфиг лежит в [deploy/Caddyfile](/C:/Users/132/Desktop/bot/deploy/Caddyfile).
