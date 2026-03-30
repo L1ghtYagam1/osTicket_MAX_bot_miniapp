@@ -1,7 +1,7 @@
 import random
 import re
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -102,8 +102,8 @@ def request_email_code(db: Session, max_user_id: str, full_name: str, email: str
 
     validate_allowed_email_domain(email)
     code = f"{random.randint(100000, 999999)}"
-    now = datetime.utcnow()
-    expires_at = datetime.utcnow() + timedelta(minutes=settings.email_verification_ttl_minutes)
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=settings.email_verification_ttl_minutes)
     old_codes = list(
         db.scalars(
             select(EmailVerification)
@@ -128,7 +128,7 @@ def request_email_code(db: Session, max_user_id: str, full_name: str, email: str
 
 
 def verify_email_code(db: Session, max_user_id: str, full_name: str, email: str, code: str) -> User:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     verification = db.scalar(
         select(EmailVerification)
         .where(EmailVerification.max_user_id == max_user_id)
@@ -545,7 +545,7 @@ def mark_notification_sent(db: Session, notification_id: int) -> None:
     notification = db.get(TicketStatusNotification, notification_id)
     if notification is None:
         raise ValueError("Уведомление не найдено")
-    notification.notified_at = datetime.utcnow()
+    notification.notified_at = datetime.now(timezone.utc)
     db.commit()
 
 
