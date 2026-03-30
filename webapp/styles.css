@@ -125,6 +125,13 @@ label {
   color: var(--muted);
 }
 
+.field-help {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
 input, select, textarea {
   width: 100%;
   border: 1px solid var(--input-border);
