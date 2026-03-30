@@ -14,6 +14,7 @@ from .models import (
     AdminAuditLog,
     AppSettings,
     AppThemeSettings,
+    AppUiSettings,
     Category,
     EmailVerification,
     Hotel,
@@ -36,6 +37,8 @@ def init_defaults(db: Session) -> None:
         db.add(AppSettings(id=1))
     if db.get(AppThemeSettings, 1) is None:
         db.add(AppThemeSettings(id=1))
+    if db.get(AppUiSettings, 1) is None:
+        db.add(AppUiSettings(id=1))
     if db.get(IntegrationSettings, 1) is None:
         db.add(IntegrationSettings(id=1))
 
@@ -210,6 +213,16 @@ def get_app_theme_settings(db: Session) -> AppThemeSettings:
     return settings_row
 
 
+def get_app_ui_settings(db: Session) -> AppUiSettings:
+    settings_row = db.get(AppUiSettings, 1)
+    if settings_row is None:
+        settings_row = AppUiSettings(id=1)
+        db.add(settings_row)
+        db.commit()
+        db.refresh(settings_row)
+    return settings_row
+
+
 def get_integration_settings(db: Session) -> IntegrationSettings:
     settings_row = db.get(IntegrationSettings, 1)
     if settings_row is None:
@@ -256,6 +269,38 @@ def update_app_theme_settings(
     settings_row.card_color = card_color
     settings_row.accent_color = accent_color
     settings_row.button_color = button_color
+    db.commit()
+    db.refresh(settings_row)
+    return settings_row
+
+
+def update_app_ui_settings(
+    db: Session,
+    *,
+    sidebar_background: str,
+    nav_item_color: str,
+    nav_item_active_text_color: str,
+    button_text_color: str,
+    input_background: str,
+    input_border_color: str,
+    heading_color: str,
+    muted_text_color: str,
+    card_radius: str,
+    button_radius: str,
+    card_shadow: str,
+) -> AppUiSettings:
+    settings_row = get_app_ui_settings(db)
+    settings_row.sidebar_background = sidebar_background
+    settings_row.nav_item_color = nav_item_color
+    settings_row.nav_item_active_text_color = nav_item_active_text_color
+    settings_row.button_text_color = button_text_color
+    settings_row.input_background = input_background
+    settings_row.input_border_color = input_border_color
+    settings_row.heading_color = heading_color
+    settings_row.muted_text_color = muted_text_color
+    settings_row.card_radius = card_radius
+    settings_row.button_radius = button_radius
+    settings_row.card_shadow = card_shadow
     db.commit()
     db.refresh(settings_row)
     return settings_row

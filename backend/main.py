@@ -17,6 +17,8 @@ from .schemas import (
     AppSettingsOut,
     AppThemeSettingsOut,
     AppThemeSettingsUpdateRequest,
+    AppUiSettingsOut,
+    AppUiSettingsUpdateRequest,
     AppSettingsUpdateRequest,
     BindEmailRequest,
     CatalogOut,
@@ -56,6 +58,7 @@ from .services import (
     enrich_tickets_status,
     get_app_settings,
     get_app_theme_settings,
+    get_app_ui_settings,
     get_integration_settings,
     get_catalog,
     get_user_by_max_id,
@@ -76,6 +79,7 @@ from .services import (
     update_user,
     update_app_settings,
     update_app_theme_settings,
+    update_app_ui_settings,
     verify_email_code,
 )
 from .session_auth import SessionPrincipal, create_session_token, verify_session_token
@@ -249,6 +253,11 @@ async def app_settings(db: Session = Depends(get_db)) -> AppSettingsOut:
 @app.get("/api/v1/app-theme-settings", response_model=AppThemeSettingsOut)
 async def app_theme_settings(db: Session = Depends(get_db)) -> AppThemeSettingsOut:
     return AppThemeSettingsOut.model_validate(get_app_theme_settings(db))
+
+
+@app.get("/api/v1/app-ui-settings", response_model=AppUiSettingsOut)
+async def app_ui_settings(db: Session = Depends(get_db)) -> AppUiSettingsOut:
+    return AppUiSettingsOut.model_validate(get_app_ui_settings(db))
 
 
 @app.get("/api/v1/integration-settings", response_model=IntegrationSettingsOut)
@@ -521,6 +530,49 @@ async def admin_update_app_theme_settings(
         },
     )
     return AppThemeSettingsOut.model_validate(settings_row)
+
+
+@app.put("/api/v1/admin/app-ui-settings", response_model=AppUiSettingsOut)
+async def admin_update_app_ui_settings(
+    payload: AppUiSettingsUpdateRequest,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+) -> AppUiSettingsOut:
+    settings_row = update_app_ui_settings(
+        db,
+        sidebar_background=payload.sidebar_background,
+        nav_item_color=payload.nav_item_color,
+        nav_item_active_text_color=payload.nav_item_active_text_color,
+        button_text_color=payload.button_text_color,
+        input_background=payload.input_background,
+        input_border_color=payload.input_border_color,
+        heading_color=payload.heading_color,
+        muted_text_color=payload.muted_text_color,
+        card_radius=payload.card_radius,
+        button_radius=payload.button_radius,
+        card_shadow=payload.card_shadow,
+    )
+    log_admin_action(
+        db,
+        actor_user_id=admin_user.id,
+        action="update",
+        entity_type="app_ui_settings",
+        entity_id=str(settings_row.id),
+        details={
+            "sidebar_background": settings_row.sidebar_background,
+            "nav_item_color": settings_row.nav_item_color,
+            "nav_item_active_text_color": settings_row.nav_item_active_text_color,
+            "button_text_color": settings_row.button_text_color,
+            "input_background": settings_row.input_background,
+            "input_border_color": settings_row.input_border_color,
+            "heading_color": settings_row.heading_color,
+            "muted_text_color": settings_row.muted_text_color,
+            "card_radius": settings_row.card_radius,
+            "button_radius": settings_row.button_radius,
+            "card_shadow": settings_row.card_shadow,
+        },
+    )
+    return AppUiSettingsOut.model_validate(settings_row)
 
 
 @app.put("/api/v1/admin/integration-settings", response_model=IntegrationSettingsOut)

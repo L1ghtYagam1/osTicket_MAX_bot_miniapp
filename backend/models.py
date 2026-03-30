@@ -57,6 +57,23 @@ class AppThemeSettings(Base, TimestampMixin):
     button_color: Mapped[str] = mapped_column(String(32), default="#169c8b")
 
 
+class AppUiSettings(Base, TimestampMixin):
+    __tablename__ = "app_ui_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sidebar_background: Mapped[str] = mapped_column(String(32), default="rgba(255, 250, 242, 0.92)")
+    nav_item_color: Mapped[str] = mapped_column(String(32), default="#ece1d1")
+    nav_item_active_text_color: Mapped[str] = mapped_column(String(32), default="#ffffff")
+    button_text_color: Mapped[str] = mapped_column(String(32), default="#ffffff")
+    input_background: Mapped[str] = mapped_column(String(32), default="#fffdf9")
+    input_border_color: Mapped[str] = mapped_column(String(32), default="#d6c8b7")
+    heading_color: Mapped[str] = mapped_column(String(32), default="#1f2a2e")
+    muted_text_color: Mapped[str] = mapped_column(String(32), default="#5e6c70")
+    card_radius: Mapped[str] = mapped_column(String(16), default="20px")
+    button_radius: Mapped[str] = mapped_column(String(16), default="14px")
+    card_shadow: Mapped[str] = mapped_column(String(255), default="0 18px 40px rgba(34, 32, 24, 0.08)")
+
+
 class IntegrationSettings(Base, TimestampMixin):
     __tablename__ = "integration_settings"
 

@@ -53,6 +53,23 @@ class AppThemeSettingsOut(BaseModel):
     button_color: str
 
 
+class AppUiSettingsOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    sidebar_background: str
+    nav_item_color: str
+    nav_item_active_text_color: str
+    button_text_color: str
+    input_background: str
+    input_border_color: str
+    heading_color: str
+    muted_text_color: str
+    card_radius: str
+    button_radius: str
+    card_shadow: str
+
+
 class IntegrationSettingsOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -73,6 +90,20 @@ class AppThemeSettingsUpdateRequest(BaseModel):
     card_color: str = Field(min_length=4, max_length=32)
     accent_color: str = Field(min_length=4, max_length=32)
     button_color: str = Field(min_length=4, max_length=32)
+
+
+class AppUiSettingsUpdateRequest(BaseModel):
+    sidebar_background: str = Field(min_length=1, max_length=32)
+    nav_item_color: str = Field(min_length=1, max_length=32)
+    nav_item_active_text_color: str = Field(min_length=1, max_length=32)
+    button_text_color: str = Field(min_length=1, max_length=32)
+    input_background: str = Field(min_length=1, max_length=32)
+    input_border_color: str = Field(min_length=1, max_length=32)
+    heading_color: str = Field(min_length=1, max_length=32)
+    muted_text_color: str = Field(min_length=1, max_length=32)
+    card_radius: str = Field(min_length=1, max_length=16)
+    button_radius: str = Field(min_length=1, max_length=16)
+    card_shadow: str = Field(min_length=1, max_length=255)
 
 
 class IntegrationSettingsUpdateRequest(BaseModel):

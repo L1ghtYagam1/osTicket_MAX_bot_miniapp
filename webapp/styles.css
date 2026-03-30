@@ -7,6 +7,15 @@
   --accent: #0e7a6d;
   --accent-2: #d6743d;
   --shadow: 0 18px 40px rgba(34, 32, 24, 0.08);
+  --sidebar-bg: rgba(255, 250, 242, 0.92);
+  --nav-item: #ece1d1;
+  --nav-active-text: #ffffff;
+  --button-text: #ffffff;
+  --input-bg: #fffdf9;
+  --input-border: #d6c8b7;
+  --heading: #1f2a2e;
+  --card-radius: 20px;
+  --button-radius: 14px;
 }
 
 * { box-sizing: border-box; }
@@ -28,7 +37,7 @@ body {
 .sidebar {
   padding: 24px;
   border-right: 1px solid var(--line);
-  background: rgba(255, 250, 242, 0.85);
+  background: var(--sidebar-bg);
   backdrop-filter: blur(10px);
 }
 
@@ -60,7 +69,7 @@ body {
 .card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 20px;
+  border-radius: var(--card-radius);
   padding: 20px;
   box-shadow: var(--shadow);
   margin-bottom: 20px;
@@ -72,6 +81,7 @@ body {
 .panel-head h1 {
   margin: 0 0 8px;
   font-size: 34px;
+  color: var(--heading);
 }
 
 .panel-head p {
@@ -82,7 +92,7 @@ body {
 .nav { display: grid; gap: 10px; }
 .nav-btn, button {
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--button-radius);
   padding: 12px 14px;
   cursor: pointer;
   font-weight: 600;
@@ -94,14 +104,14 @@ button.full-width,
 }
 
 .nav-btn {
-  background: #ece1d1;
+  background: var(--nav-item);
   color: var(--ink);
   text-align: left;
 }
 
 .nav-btn.active, .primary {
   background: linear-gradient(135deg, var(--accent), var(--button, #169c8b));
-  color: white;
+  color: var(--button-text);
 }
 
 .card > .primary {
@@ -117,11 +127,12 @@ label {
 
 input, select, textarea {
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid var(--input-border);
   border-radius: 12px;
   padding: 12px;
   font: inherit;
-  background: #fffdf9;
+  background: var(--input-bg);
+  color: var(--ink);
 }
 
 .grid {
@@ -144,16 +155,16 @@ input, select, textarea {
 }
 .subnav-btn {
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--button-radius);
   padding: 12px 14px;
   cursor: pointer;
   font-weight: 600;
-  background: #ece1d1;
+  background: var(--nav-item);
   color: var(--ink);
 }
 .subnav-btn.active {
   background: linear-gradient(135deg, var(--accent), var(--button, #169c8b));
-  color: white;
+  color: var(--nav-active-text);
 }
 
 .result {

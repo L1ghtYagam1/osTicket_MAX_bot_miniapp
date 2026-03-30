@@ -6,6 +6,7 @@ const state = {
   user: null,
   appSettings: null,
   appThemeSettings: null,
+  appUiSettings: null,
   integrationSettings: null,
   catalog: null,
 };
@@ -71,6 +72,10 @@ const api = {
 
   getAppThemeSettings() {
     return this.request("/api/v1/app-theme-settings");
+  },
+
+  getAppUiSettings() {
+    return this.request("/api/v1/app-ui-settings");
   },
 
   getIntegrationSettings() {
@@ -186,6 +191,13 @@ const api = {
     });
   },
 
+  adminUpdateAppUiSettings(payload) {
+    return this.request("/api/v1/admin/app-ui-settings", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+
   adminUpdateIntegrationSettings(payload) {
     return this.request("/api/v1/admin/integration-settings", {
       method: "PUT",
@@ -259,6 +271,35 @@ function applyThemeSettings() {
   byId("cardColorInput").value = theme.card_color || "";
   byId("accentColorInput").value = theme.accent_color || "";
   byId("buttonColorInput").value = theme.button_color || "";
+}
+
+function applyUiSettings() {
+  const settings = state.appUiSettings;
+  if (!settings) return;
+
+  document.documentElement.style.setProperty("--sidebar-bg", settings.sidebar_background || "rgba(255, 250, 242, 0.92)");
+  document.documentElement.style.setProperty("--nav-item", settings.nav_item_color || "#ece1d1");
+  document.documentElement.style.setProperty("--nav-active-text", settings.nav_item_active_text_color || "#ffffff");
+  document.documentElement.style.setProperty("--button-text", settings.button_text_color || "#ffffff");
+  document.documentElement.style.setProperty("--input-bg", settings.input_background || "#fffdf9");
+  document.documentElement.style.setProperty("--input-border", settings.input_border_color || "#d6c8b7");
+  document.documentElement.style.setProperty("--heading", settings.heading_color || "#1f2a2e");
+  document.documentElement.style.setProperty("--muted", settings.muted_text_color || "#5e6c70");
+  document.documentElement.style.setProperty("--card-radius", settings.card_radius || "20px");
+  document.documentElement.style.setProperty("--button-radius", settings.button_radius || "14px");
+  document.documentElement.style.setProperty("--shadow", settings.card_shadow || "0 18px 40px rgba(34, 32, 24, 0.08)");
+
+  byId("sidebarBackgroundInput").value = settings.sidebar_background || "";
+  byId("navItemColorInput").value = settings.nav_item_color || "";
+  byId("navItemActiveTextColorInput").value = settings.nav_item_active_text_color || "";
+  byId("buttonTextColorInput").value = settings.button_text_color || "";
+  byId("inputBackgroundInput").value = settings.input_background || "";
+  byId("inputBorderColorInput").value = settings.input_border_color || "";
+  byId("headingColorInput").value = settings.heading_color || "";
+  byId("mutedTextColorInput").value = settings.muted_text_color || "";
+  byId("cardRadiusInput").value = settings.card_radius || "";
+  byId("buttonRadiusInput").value = settings.button_radius || "";
+  byId("cardShadowInput").value = settings.card_shadow || "";
 }
 
 function applyIntegrationSettings() {
@@ -676,6 +717,29 @@ async function saveThemeSettings() {
   }
 }
 
+async function saveAppearanceSettings() {
+  const result = byId("appearanceResult");
+  try {
+    state.appUiSettings = await api.adminUpdateAppUiSettings({
+      sidebar_background: byId("sidebarBackgroundInput").value.trim(),
+      nav_item_color: byId("navItemColorInput").value.trim(),
+      nav_item_active_text_color: byId("navItemActiveTextColorInput").value.trim(),
+      button_text_color: byId("buttonTextColorInput").value.trim(),
+      input_background: byId("inputBackgroundInput").value.trim(),
+      input_border_color: byId("inputBorderColorInput").value.trim(),
+      heading_color: byId("headingColorInput").value.trim(),
+      muted_text_color: byId("mutedTextColorInput").value.trim(),
+      card_radius: byId("cardRadiusInput").value.trim(),
+      button_radius: byId("buttonRadiusInput").value.trim(),
+      card_shadow: byId("cardShadowInput").value.trim(),
+    });
+    applyUiSettings();
+    result.textContent = "Детальные настройки интерфейса сохранены.";
+  } catch (error) {
+    result.textContent = error.message;
+  }
+}
+
 async function saveIntegrationSettings() {
   const result = byId("integrationResult");
   try {
@@ -831,9 +895,11 @@ async function addTopic() {
 async function init() {
   state.appSettings = await api.getAppSettings();
   state.appThemeSettings = await api.getAppThemeSettings();
+  state.appUiSettings = await api.getAppUiSettings();
   state.integrationSettings = await api.getIntegrationSettings();
   applyBranding();
   applyThemeSettings();
+  applyUiSettings();
   applyIntegrationSettings();
 
   hydrateSession();
@@ -877,6 +943,7 @@ async function init() {
   byId("refreshAuditBtn").addEventListener("click", loadAdmin);
   byId("saveBrandingBtn").addEventListener("click", saveBrandingSettings);
   byId("saveThemeBtn").addEventListener("click", saveThemeSettings);
+  byId("saveAppearanceBtn").addEventListener("click", saveAppearanceSettings);
   byId("saveIntegrationBtn").addEventListener("click", saveIntegrationSettings);
   byId("createAnotherBtn").addEventListener("click", () => {
     resetCreateFormVisibility();

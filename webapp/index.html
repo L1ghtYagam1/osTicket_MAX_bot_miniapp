@@ -101,6 +101,7 @@
         <div class="subnav" id="adminSubnav">
           <button class="subnav-btn active" data-admin-tab="branding">Брендинг</button>
           <button class="subnav-btn" data-admin-tab="theme">Цвета</button>
+          <button class="subnav-btn" data-admin-tab="appearance">Интерфейс</button>
           <button class="subnav-btn" data-admin-tab="integration">Интеграция</button>
           <button class="subnav-btn" data-admin-tab="users">Пользователи</button>
           <button class="subnav-btn" data-admin-tab="hotels">Отели</button>
@@ -139,6 +140,36 @@
             <label>Цвет кнопок</label>
             <input id="buttonColorInput" placeholder="#169c8b">
             <div id="themeResult" class="result"></div>
+          </div>
+
+          <div class="card admin-subpanel" id="admin-panel-appearance">
+            <div class="card-toolbar">
+              <h3>Детальные настройки интерфейса</h3>
+              <button id="saveAppearanceBtn">Сохранить</button>
+            </div>
+            <label>Фон сайдбара</label>
+            <input id="sidebarBackgroundInput" placeholder="rgba(255, 250, 242, 0.92)">
+            <label>Цвет обычной навигации</label>
+            <input id="navItemColorInput" placeholder="#ece1d1">
+            <label>Цвет текста активной вкладки</label>
+            <input id="navItemActiveTextColorInput" placeholder="#ffffff">
+            <label>Цвет текста кнопок</label>
+            <input id="buttonTextColorInput" placeholder="#ffffff">
+            <label>Фон полей ввода</label>
+            <input id="inputBackgroundInput" placeholder="#fffdf9">
+            <label>Цвет рамки полей</label>
+            <input id="inputBorderColorInput" placeholder="#d6c8b7">
+            <label>Цвет заголовков</label>
+            <input id="headingColorInput" placeholder="#1f2a2e">
+            <label>Цвет вторичного текста</label>
+            <input id="mutedTextColorInput" placeholder="#5e6c70">
+            <label>Радиус карточек</label>
+            <input id="cardRadiusInput" placeholder="20px">
+            <label>Радиус кнопок</label>
+            <input id="buttonRadiusInput" placeholder="14px">
+            <label>Тень карточек</label>
+            <input id="cardShadowInput" placeholder="0 18px 40px rgba(34, 32, 24, 0.08)">
+            <div id="appearanceResult" class="result"></div>
           </div>
 
           <div class="card admin-subpanel" id="admin-panel-integration">
