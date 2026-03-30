@@ -2,6 +2,7 @@ const state = {
   maxUserId: localStorage.getItem("max_user_id") || "",
   fullName: localStorage.getItem("full_name") || "",
   accessToken: localStorage.getItem("access_token") || "",
+  isAdmin: false,
   catalog: null,
   webAppReady: false,
 };
@@ -150,6 +151,20 @@ function setLaunchStatus(message) {
   byId("maxLaunchStatus").textContent = message;
 }
 
+function updateAdminVisibility() {
+  const adminNavBtn = document.querySelector('.nav-btn[data-tab="admin"]');
+  const adminPanel = byId("tab-admin");
+  if (!adminNavBtn || !adminPanel) return;
+
+  const shouldShowAdmin = Boolean(state.isAdmin);
+  adminNavBtn.hidden = !shouldShowAdmin;
+  adminPanel.hidden = !shouldShowAdmin;
+
+  if (!shouldShowAdmin && adminNavBtn.classList.contains("active")) {
+    activateTab("bind");
+  }
+}
+
 function persistSession() {
   localStorage.setItem("max_user_id", state.maxUserId);
   localStorage.setItem("full_name", state.fullName);
@@ -172,16 +187,24 @@ function hydrateSession() {
 }
 
 async function validateStoredSession() {
-  if (!state.accessToken) return;
+  if (!state.accessToken) {
+    state.isAdmin = false;
+    updateAdminVisibility();
+    return;
+  }
   try {
     const me = await api.getMe();
     state.maxUserId = String(me.max_user_id || state.maxUserId);
     state.fullName = String(me.full_name || state.fullName);
+    state.isAdmin = Boolean(me.is_admin);
     persistSession();
   } catch (error) {
     console.warn("Stored session is invalid", error);
     state.accessToken = "";
+    state.isAdmin = false;
     persistSession();
+  } finally {
+    updateAdminVisibility();
   }
 }
 
@@ -405,6 +428,10 @@ function renderAuditLogs(items) {
 }
 
 async function loadAdmin() {
+  if (!state.isAdmin) {
+    activateTab("bind");
+    return;
+  }
   try {
     const [users, hotels, categories, topics, auditLogs] = await Promise.all([
       api.adminListUsers(),
@@ -521,10 +548,16 @@ async function init() {
   hydrateSession();
   await validateStoredSession();
   await hydrateFromMaxWebApp();
+  await validateStoredSession();
   hydrateSession();
+  updateAdminVisibility();
 
   document.querySelectorAll(".nav-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
+      if (btn.dataset.tab === "admin" && !state.isAdmin) {
+        activateTab("bind");
+        return;
+      }
       activateTab(btn.dataset.tab);
       if (btn.dataset.tab === "tickets") await refreshTickets();
       if (btn.dataset.tab === "admin") await loadAdmin();
