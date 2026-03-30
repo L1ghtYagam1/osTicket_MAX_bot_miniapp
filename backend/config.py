@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     osticket_api_key: str = ""
     osticket_request_timeout: int = 20
     osticket_status_api_url: str = ""
+    osticket_extended_api_url: str = ""
+    osticket_extended_api_staff_id: int = 1
+    osticket_extended_api_status_open_id: int = 1
+    osticket_extended_api_status_close_id: int = 3
+    osticket_extended_api_team_id: int = 1
+    osticket_extended_api_dept_id: int = 1
+    osticket_extended_api_topic_id: int = 1
+    osticket_extended_api_username: str = ""
     email_verification_ttl_minutes: int = 10
     max_webapp_auth_max_age_seconds: int = 86400
     max_session_ttl_seconds: int = 0

@@ -271,13 +271,13 @@ async def create_ticket_endpoint(payload: TicketCreateRequest, db: Session = Dep
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-    ticket = await enrich_ticket_status(ticket)
+    ticket = await enrich_ticket_status(db, ticket)
     return TicketOut.model_validate(ticket)
 
 
 @app.get("/api/v1/tickets", response_model=list[TicketOut])
 async def list_tickets(max_user_id: str, db: Session = Depends(get_db)) -> list[TicketOut]:
-    tickets = await enrich_tickets_status(list_user_tickets(db, max_user_id))
+    tickets = await enrich_tickets_status(db, list_user_tickets(db, max_user_id))
     return [TicketOut.model_validate(item) for item in tickets]
 
 
@@ -287,7 +287,7 @@ async def get_ticket_status(external_id: str, max_user_id: str, db: Session = De
     ticket = next((item for item in tickets if item.external_id == external_id), None)
     if ticket is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
-    ticket = await enrich_ticket_status(ticket)
+    ticket = await enrich_ticket_status(db, ticket)
     return TicketStatusOut(external_id=ticket.external_id, status=ticket.current_status)
 
 

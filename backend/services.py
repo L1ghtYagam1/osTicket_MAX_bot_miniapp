@@ -220,6 +220,11 @@ def get_integration_settings(db: Session) -> IntegrationSettings:
     return settings_row
 
 
+def is_extended_api_enabled(db: Session) -> bool:
+    integration_settings = get_integration_settings(db)
+    return bool(integration_settings.extended_api_enabled and settings.osticket_extended_api_url)
+
+
 def update_integration_settings(
     db: Session,
     *,
@@ -448,10 +453,13 @@ def list_user_tickets(db: Session, max_user_id: str) -> list[Ticket]:
     return tickets
 
 
-async def enrich_ticket_status(ticket: Ticket) -> Ticket:
-    if settings.osticket_status_api_url:
+async def enrich_ticket_status(db: Session, ticket: Ticket) -> Ticket:
+    if settings.osticket_status_api_url or is_extended_api_enabled(db):
         try:
-            current_status = await osticket_client.get_ticket_status(ticket.external_id)
+            current_status = await osticket_client.get_ticket_status(
+                ticket.external_id,
+                use_extended_api=is_extended_api_enabled(db),
+            )
             ticket.status = current_status
         except Exception:
             current_status = ticket.status
@@ -472,20 +480,21 @@ async def enrich_ticket_status(ticket: Ticket) -> Ticket:
     return ticket
 
 
-async def enrich_tickets_status(tickets: list[Ticket]) -> list[Ticket]:
+async def enrich_tickets_status(db: Session, tickets: list[Ticket]) -> list[Ticket]:
     enriched: list[Ticket] = []
     for ticket in tickets:
-        enriched.append(await enrich_ticket_status(ticket))
+        enriched.append(await enrich_ticket_status(db, ticket))
     return enriched
 
 
 async def sync_ticket_statuses(db: Session) -> list[TicketStatusNotification]:
     notifications: list[TicketStatusNotification] = []
     tickets = list(db.scalars(select(Ticket).order_by(Ticket.created_at.desc())).all())
+    use_extended_api = is_extended_api_enabled(db)
     for ticket in tickets:
         previous_status = ticket.status
         try:
-            current_status = await osticket_client.get_ticket_status(ticket.external_id)
+            current_status = await osticket_client.get_ticket_status(ticket.external_id, use_extended_api=use_extended_api)
         except Exception:
             continue
         if not current_status or current_status == previous_status:
