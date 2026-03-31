@@ -142,11 +142,7 @@ def verify_email_code(db: Session, max_user_id: str, full_name: str, email: str,
     )
     if verification is None:
         raise ValueError("Код не найден или уже использован")
-    expires_at = verification.expires_at
-    if expires_at.tzinfo is None:
-        # Some DB drivers may return naive datetimes even for timezone-aware columns.
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at < now:
+    if verification.expires_at < now:
         raise ValueError("Срок действия кода истек")
 
     verification.consumed_at = now
