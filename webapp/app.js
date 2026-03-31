@@ -1122,7 +1122,7 @@ function updateBindVisibility() {
 }
 
 async function hydrateFromMaxWebApp() {
-  const webApp = window.WebApp || window.MAX?.WebApp || window.MaxWebApp || window.maxWebApp || window.Telegram?.WebApp;
+  const webApp = window.WebApp;
   if (!webApp) {
     setLaunchStatus("MAX WebApp not detected. You can continue manually.");
     return;
