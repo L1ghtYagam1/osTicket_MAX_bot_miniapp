@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MAX Support</title>
-  <script src="./app.js"></script>
-  <link rel="stylesheet" href="./styles.css">
+  <script src="https://st.max.ru/js/max-web-app.js"></script>
+  <link rel="stylesheet" href="/app/assets/styles.css?v=20260330-4">
 </head>
 <body>
   <div class="shell">
@@ -19,80 +19,80 @@
       </div>
 
       <div class="card" id="sessionCard">
-        <h3>Session</h3>
-        <div id="maxLaunchStatus" class="result">MAX WebApp not detected. You can continue manually.</div>
+        <h3>Сессия</h3>
+        <div id="maxLaunchStatus" class="result">MAX WebApp не обнаружен. Можно продолжить вручную.</div>
         <label>MAX User ID</label>
-        <input id="maxUserId" placeholder="For example 455587587">
-        <label>Name</label>
-        <input id="fullName" placeholder="Full name">
-        <button id="saveSessionBtn" class="primary full-width">Save session</button>
+        <input id="maxUserId" placeholder="Например 455587587">
+        <label>Имя</label>
+        <input id="fullName" placeholder="ФИО">
+        <button id="saveSessionBtn" class="primary full-width">Сохранить сессию</button>
       </div>
 
       <nav class="nav">
-        <button class="nav-btn active" data-tab="bind">Email binding</button>
-        <button class="nav-btn" data-tab="create">New ticket</button>
-        <button class="nav-btn" data-tab="tickets">My tickets</button>
-        <button class="nav-btn" data-tab="admin" hidden>Admin</button>
+        <button class="nav-btn active" data-tab="bind">Привязка почты</button>
+        <button class="nav-btn" data-tab="create">Новая заявка</button>
+        <button class="nav-btn" data-tab="tickets">Мои заявки</button>
+        <button class="nav-btn" data-tab="admin" hidden>Админка</button>
       </nav>
     </aside>
 
     <main class="content">
       <section class="panel active" id="tab-bind">
         <div class="panel-head">
-          <h1>Work Email Verification</h1>
-          <p>Verify your work email once, and the app will remember you for future logins.</p>
+          <h1>Подтверждение рабочей почты</h1>
+          <p>Один раз подтвердите рабочую почту, и приложение запомнит вас для следующих входов.</p>
         </div>
         <div class="card">
           <div id="bindSummary" class="result" hidden></div>
-          <label>Work email</label>
+          <label>Рабочая почта</label>
           <input id="emailInput" placeholder="name@company.ru">
-          <button id="requestCodeBtn" class="primary full-width">Send code</button>
-          <label>Email code</label>
+          <button id="requestCodeBtn" class="primary full-width">Отправить код</button>
+          <label>Код из письма</label>
           <input id="emailCodeInput" placeholder="123456">
-          <button id="bindEmailBtn" class="primary full-width">Verify email</button>
+          <button id="bindEmailBtn" class="primary full-width">Подтвердить почту</button>
           <div id="bindResult" class="result"></div>
         </div>
       </section>
 
       <section class="panel" id="tab-create">
         <div class="panel-head">
-          <h1>New ticket</h1>
+          <h1>Новая заявка</h1>
         </div>
         <div class="grid two">
           <div class="card" id="createFormCard">
-            <label>Hotel</label>
+            <label>Отель</label>
             <select id="hotelSelect"></select>
-            <label>Category</label>
+            <label>Категория</label>
             <select id="categorySelect"></select>
-            <label>Topic</label>
+            <label>Тема</label>
             <select id="topicSelect"></select>
-            <label>Description</label>
-            <textarea id="descriptionInput" rows="8" placeholder="Describe the issue"></textarea>
-            <button id="createTicketBtn" class="primary full-width">Submit ticket</button>
+            <label>Описание</label>
+            <textarea id="descriptionInput" rows="8" placeholder="Опишите проблему"></textarea>
+            <button id="createTicketBtn" class="primary full-width">Отправить заявку</button>
             <div id="createResult" class="result"></div>
           </div>
           <div class="card" id="createHintCard">
-            <h3>Hint</h3>
+            <h3>Подсказка</h3>
             <p id="createHintText"></p>
           </div>
           <div class="card" id="createSuccessCard" hidden>
-            <h3>Your ticket has been created</h3>
+            <h3>Ваша заявка создана</h3>
             <div id="createSuccessText" class="result"></div>
-            <button id="createAnotherBtn" class="primary full-width">Create another ticket</button>
+            <button id="createAnotherBtn" class="primary full-width">Создать ещё заявку</button>
           </div>
         </div>
       </section>
 
       <section class="panel" id="tab-tickets">
         <div class="panel-head">
-          <h1>My tickets</h1>
+          <h1>Мои заявки</h1>
         </div>
         <div class="card tickets-card">
-          <button id="refreshTicketsBtn" class="primary full-width">Refresh list</button>
+          <button id="refreshTicketsBtn" class="primary full-width">Обновить список</button>
           <div id="ticketDetailsCard" class="ticket-details-card" hidden>
             <div class="card-toolbar">
-              <h3 id="ticketDetailsTitle">Ticket</h3>
-              <button id="closeTicketDetailsBtn">Close</button>
+              <h3 id="ticketDetailsTitle">Р—Р°СЏРІРєР°</h3>
+              <button id="closeTicketDetailsBtn">Р—Р°РєСЂС‹С‚СЊ</button>
             </div>
             <div id="ticketDetailsMeta" class="result"></div>
             <div id="ticketDetailsDescription" class="ticket-description"></div>
@@ -104,26 +104,26 @@
 
       <section class="panel" id="tab-ticket-view">
         <div class="panel-head">
-          <h1 id="ticketDetailsPageTitle">Ticket</h1>
+          <h1 id="ticketDetailsPageTitle">Заявка</h1>
         </div>
         <div class="card ticket-view-hero">
           <div class="card-toolbar ticket-view-toolbar">
-            <h3 id="ticketDetailsPageInnerTitle">Ticket</h3>
-            <button id="closeTicketDetailsPageBtn">Back to list</button>
+            <h3 id="ticketDetailsPageInnerTitle">Заявка</h3>
+            <button id="closeTicketDetailsPageBtn">Назад к списку</button>
           </div>
           <div id="ticketDetailsPageMeta" class="result"></div>
           <div id="ticketDetailsPageDescription" class="ticket-description"></div>
           <div id="ticketThreadPageList" class="list" hidden></div>
           <div class="ticket-view-shell">
-            <div class="ticket-view-kicker">Ticket card</div>
+            <div class="ticket-view-kicker">Карточка заявки</div>
             <div id="ticketDetailsPageMetaCards" class="ticket-meta-grid"></div>
             <div class="grid two ticket-view-grid">
               <div class="card">
-                <h3>Description</h3>
+                <h3>Описание</h3>
                 <div id="ticketDetailsPageDescriptionCard" class="ticket-description"></div>
               </div>
               <div class="card">
-                <h3>History</h3>
+                <h3>История</h3>
                 <div id="ticketThreadPageListCard" class="list"></div>
               </div>
             </div>
@@ -133,147 +133,147 @@
 
       <section class="panel" id="tab-admin" hidden>
         <div class="panel-head">
-          <h1>Admin panel</h1>
-          <p>Manage users, access rights, directories, and interface settings.</p>
+          <h1>Админ-панель</h1>
+          <p>Управление пользователями, правами доступа, справочниками и настройками интерфейса.</p>
         </div>
         <div class="subnav" id="adminSubnav">
-          <button class="subnav-btn active" data-admin-tab="branding">Branding</button>
-          <button class="subnav-btn" data-admin-tab="theme">Theme</button>
-          <button class="subnav-btn" data-admin-tab="appearance">Interface</button>
-          <button class="subnav-btn" data-admin-tab="integration">Integration</button>
-          <button class="subnav-btn" data-admin-tab="users">Users</button>
-          <button class="subnav-btn" data-admin-tab="hotels">Hotels</button>
-          <button class="subnav-btn" data-admin-tab="categories">Categories</button>
-          <button class="subnav-btn" data-admin-tab="topics">Topics</button>
-          <button class="subnav-btn" data-admin-tab="audit">Audit</button>
+          <button class="subnav-btn active" data-admin-tab="branding">Брендинг</button>
+          <button class="subnav-btn" data-admin-tab="theme">Цвета</button>
+          <button class="subnav-btn" data-admin-tab="appearance">Интерфейс</button>
+          <button class="subnav-btn" data-admin-tab="integration">Интеграция</button>
+          <button class="subnav-btn" data-admin-tab="users">Пользователи</button>
+          <button class="subnav-btn" data-admin-tab="hotels">Отели</button>
+          <button class="subnav-btn" data-admin-tab="categories">Категории</button>
+          <button class="subnav-btn" data-admin-tab="topics">Темы</button>
+          <button class="subnav-btn" data-admin-tab="audit">Аудит</button>
         </div>
         <div class="admin-panel-grid">
           <div class="card admin-subpanel active" id="admin-panel-branding">
             <div class="card-toolbar">
-              <h3>Branding</h3>
-              <button id="saveBrandingBtn">Save</button>
+              <h3>Брендинг</h3>
+              <button id="saveBrandingBtn">Сохранить</button>
             </div>
-            <label>Name</label>
-            <input id="brandNameInput" placeholder="App name">
-            <label>User hint</label>
-            <input id="brandSubtitleInput" placeholder="Hint text on ticket creation screen">
-            <label>Short mark</label>
+            <label>Название</label>
+            <input id="brandNameInput" placeholder="Название приложения">
+            <label>Подсказка пользователю</label>
+            <input id="brandSubtitleInput" placeholder="Текст подсказки на экране создания заявки">
+            <label>Короткая метка</label>
             <input id="brandMarkInput" placeholder="MS">
-            <label>Icon URL</label>
+            <label>URL иконки</label>
             <input id="brandIconUrlInput" placeholder="https://...">
-            <label>Upload icon</label>
+            <label>Загрузить иконку</label>
             <input id="brandIconFileInput" type="file" accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml">
-            <button id="uploadBrandIconBtn" type="button">Upload file</button>
+            <button id="uploadBrandIconBtn" type="button">Загрузить файл</button>
             <div id="brandingResult" class="result"></div>
           </div>
 
           <div class="card admin-subpanel" id="admin-panel-theme">
             <div class="card-toolbar">
-              <h3>Theme colors</h3>
-              <button id="saveThemeBtn">Save</button>
+              <h3>Цвета интерфейса</h3>
+              <button id="saveThemeBtn">Сохранить</button>
             </div>
-            <label>Background</label>
+            <label>Фон интерфейса</label>
             <input id="backgroundColorInput" placeholder="#f4efe7">
-            <label>Cards</label>
+            <label>Фон карточек</label>
             <input id="cardColorInput" placeholder="#fffaf2">
-            <label>Accent</label>
+            <label>Основной акцент</label>
             <input id="accentColorInput" placeholder="#0e7a6d">
-            <label>Buttons</label>
+            <label>Цвет кнопок</label>
             <input id="buttonColorInput" placeholder="#169c8b">
             <div id="themeResult" class="result"></div>
           </div>
 
           <div class="card admin-subpanel" id="admin-panel-appearance">
             <div class="card-toolbar">
-              <h3>Detailed interface settings</h3>
-              <button id="saveAppearanceBtn">Save</button>
+              <h3>Детальные настройки интерфейса</h3>
+              <button id="saveAppearanceBtn">Сохранить</button>
             </div>
-            <label>Sidebar background</label>
+            <label>Фон сайдбара</label>
             <input id="sidebarBackgroundInput" placeholder="rgba(255, 250, 242, 0.92)">
-            <div class="field-help">Background of the left column with logo, menu and session block.</div>
-            <label>Default nav item color</label>
+            <div class="field-help">Фон левой колонки с логотипом, меню и блоком сессии.</div>
+            <label>Цвет обычной навигации</label>
             <input id="navItemColorInput" placeholder="#ece1d1">
-            <div class="field-help">Color of menu buttons in inactive state.</div>
-            <label>Active nav text color</label>
+            <div class="field-help">Цвет кнопок меню в неактивном состоянии.</div>
+            <label>Цвет текста активной вкладки</label>
             <input id="navItemActiveTextColorInput" placeholder="#ffffff">
-            <div class="field-help">Text color of the active menu button and active admin tab.</div>
-            <label>Button text color</label>
+            <div class="field-help">Цвет текста у активной кнопки меню и активной вкладки админки.</div>
+            <label>Цвет текста кнопок</label>
             <input id="buttonTextColorInput" placeholder="#ffffff">
-            <div class="field-help">Text color on primary buttons like "Save" or "Submit ticket".</div>
-            <label>Input background</label>
+            <div class="field-help">Цвет надписей на основных кнопках, например “Сохранить” или “Отправить заявку”.</div>
+            <label>Фон полей ввода</label>
             <input id="inputBackgroundInput" placeholder="#fffdf9">
-            <div class="field-help">Background for input, select and textarea across the app.</div>
-            <label>Input border color</label>
+            <div class="field-help">Фон input, select и textarea по всему интерфейсу.</div>
+            <label>Цвет рамки полей</label>
             <input id="inputBorderColorInput" placeholder="#d6c8b7">
-            <div class="field-help">Border color for inputs, selects and textareas.</div>
-            <label>Heading color</label>
+            <div class="field-help">Цвет границы у полей ввода, списков и текстовых областей.</div>
+            <label>Цвет заголовков</label>
             <input id="headingColorInput" placeholder="#1f2a2e">
-            <div class="field-help">Color of large page and card headings.</div>
-            <label>Muted text color</label>
+            <div class="field-help">Цвет крупных заголовков экранов и карточек.</div>
+            <label>Цвет вторичного текста</label>
             <input id="mutedTextColorInput" placeholder="#5e6c70">
-            <div class="field-help">Color for descriptions, hints and secondary text.</div>
-            <label>Card radius</label>
+            <div class="field-help">Цвет описаний, пояснений и вспомогательного текста.</div>
+            <label>Радиус карточек</label>
             <input id="cardRadiusInput" placeholder="20px">
-            <div class="field-help">How rounded major cards and panels should be. Example: 20px.</div>
-            <label>Button radius</label>
+            <div class="field-help">Насколько круглыми будут большие карточки и панели. Пример: 20px.</div>
+            <label>Радиус кнопок</label>
             <input id="buttonRadiusInput" placeholder="14px">
-            <div class="field-help">Rounding for all buttons and tabs. Example: 14px.</div>
-            <label>Card shadow</label>
+            <div class="field-help">Скругление всех кнопок и вкладок. Пример: 14px.</div>
+            <label>Тень карточек</label>
             <input id="cardShadowInput" placeholder="0 18px 40px rgba(34, 32, 24, 0.08)">
-            <div class="field-help">Shadow under cards. Use it to make the interface softer or sharper.</div>
+            <div class="field-help">Тень под карточками. Можно сделать интерфейс мягче или строже.</div>
             <div id="appearanceResult" class="result"></div>
           </div>
 
           <div class="card admin-subpanel" id="admin-panel-integration">
             <div class="card-toolbar">
-              <h3>osTicket integration</h3>
-              <button id="saveIntegrationBtn">Save</button>
+              <h3>Интеграция osTicket</h3>
+              <button id="saveIntegrationBtn">Сохранить</button>
             </div>
-            <label>Plugin label</label>
+            <label>Название плагина</label>
             <input id="pluginLabelInput" placeholder="API Endpoints">
             <label class="toggle-row">
               <input id="extendedApiEnabledInput" type="checkbox">
-              <span>Enable API Endpoints plugin</span>
+              <span>Включить плагин API Endpoints</span>
             </label>
             <div id="integrationResult" class="result"></div>
           </div>
 
           <div class="card admin-subpanel" id="admin-panel-users">
             <div class="card-toolbar">
-              <h3>Users</h3>
-              <button id="refreshUsersBtn">Refresh</button>
+              <h3>Пользователи</h3>
+              <button id="refreshUsersBtn">Обновить</button>
             </div>
             <div id="usersAdminList" class="list"></div>
           </div>
 
           <div class="card admin-subpanel" id="admin-panel-hotels">
             <div class="card-toolbar">
-              <h3>Hotels</h3>
-              <button id="addHotelBtn">Add</button>
+              <h3>Отели</h3>
+              <button id="addHotelBtn">Добавить</button>
             </div>
             <div id="hotelsAdminList" class="list"></div>
           </div>
 
           <div class="card admin-subpanel" id="admin-panel-categories">
             <div class="card-toolbar">
-              <h3>Categories</h3>
-              <button id="addCategoryBtn">Add</button>
+              <h3>Категории</h3>
+              <button id="addCategoryBtn">Добавить</button>
             </div>
             <div id="categoriesAdminList" class="list"></div>
           </div>
 
           <div class="card admin-subpanel" id="admin-panel-topics">
             <div class="card-toolbar">
-              <h3>Topics</h3>
-              <button id="addTopicBtn">Add</button>
+              <h3>Темы</h3>
+              <button id="addTopicBtn">Добавить</button>
             </div>
             <div id="topicsAdminList" class="list"></div>
           </div>
 
           <div class="card admin-subpanel" id="admin-panel-audit">
             <div class="card-toolbar">
-              <h3>Audit log</h3>
-              <button id="refreshAuditBtn">Refresh</button>
+              <h3>Журнал аудита</h3>
+              <button id="refreshAuditBtn">Обновить</button>
             </div>
             <div id="auditAdminList" class="list"></div>
           </div>
@@ -282,6 +282,6 @@
     </main>
   </div>
 
-  <script src="/app/assets/app.js?v=20260330-7"></script>
+  <script src="/app/assets/app.js?v=20260330-4"></script>
 </body>
 </html>
