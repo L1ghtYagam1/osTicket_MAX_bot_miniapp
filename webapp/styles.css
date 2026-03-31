@@ -147,8 +147,9 @@ input, select, textarea {
   gap: 20px;
 }
 
-.grid.two { grid-template-columns: 2fr 1fr; }
+.grid.two { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
 .grid.three { grid-template-columns: repeat(4, 1fr); }
+.grid > * { min-width: 0; }
 .admin-panel-grid { margin-top: 20px; }
 .admin-subpanel { display: none; }
 .admin-subpanel.active { display: block; }
@@ -191,11 +192,13 @@ input, select, textarea {
   border-radius: 14px;
   border: 1px solid var(--line);
   background: white;
+  min-width: 0;
 }
 
 .list-head {
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
   margin-bottom: 8px;
   font-weight: 600;
@@ -280,7 +283,9 @@ input, select, textarea {
 }
 
 .ticket-view-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
+  margin-top: 18px;
 }
 
 .ticket-meta-grid {
@@ -288,6 +293,7 @@ input, select, textarea {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-top: 18px;
+  margin-bottom: 14px;
 }
 
 .ticket-meta-card {
@@ -306,17 +312,32 @@ input, select, textarea {
 .ticket-meta-value {
   font-weight: 700;
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .ticket-description {
   margin: 12px 0 16px;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   line-height: 1.55;
 }
 
 .thread-entry {
   display: grid;
   gap: 6px;
+  min-width: 0;
+}
+
+.thread-entry .ticket-description,
+.thread-entry .list-meta,
+.list-meta {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+#ticketsList {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 @media (max-width: 1024px) {
@@ -348,5 +369,9 @@ input, select, textarea {
 
   .ticket-meta-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  #ticketsList {
+    grid-template-columns: 1fr;
   }
 }
