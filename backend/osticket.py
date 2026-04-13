@@ -118,6 +118,12 @@ def extract_extended_thread_entries(ticket_payload: dict[str, Any]) -> list[dict
         ticket_payload.get("entries"),
         ticket_payload.get("messages"),
         ticket_payload.get("responses"),
+        ticket_payload.get("history"),
+        ticket_payload.get("activity"),
+        ticket_payload.get("events"),
+        ticket_payload.get("conversation"),
+        ticket_payload.get("ticket_thread"),
+        ticket_payload.get("thread_entries"),
     )
     raw_entries: list[Any] = []
     for candidate in candidates:
@@ -130,10 +136,11 @@ def extract_extended_thread_entries(ticket_payload: dict[str, Any]) -> list[dict
         if not isinstance(item, dict):
             continue
         body = ""
-        for key in ("body", "message", "text", "response", "content"):
+        for key in ("body", "message", "text", "response", "content", "note", "comment"):
             value = item.get(key)
-            if isinstance(value, str) and value.strip():
-                body = value.strip()
+            text_value = _extract_text_value(value)
+            if text_value:
+                body = text_value
                 break
         if not body:
             continue
@@ -180,7 +187,43 @@ def extract_extended_thread_entries(ticket_payload: dict[str, Any]) -> list[dict
                 "entry_type": entry_type,
             }
         )
-    return thread
+    if thread:
+        return thread
+
+    # Fallback: some plugins don't return full thread arrays, only latest message/response fields.
+    fallback_keys = (
+        ("last_response", "Ответ сотрудника"),
+        ("lastresponse", "Ответ сотрудника"),
+        ("response", "Ответ сотрудника"),
+        ("last_message", "Последнее сообщение"),
+        ("lastmessage", "Последнее сообщение"),
+        ("message", "Сообщение"),
+    )
+    for key, title in fallback_keys:
+        text_value = _extract_text_value(ticket_payload.get(key))
+        if text_value:
+            return [
+                {
+                    "title": title,
+                    "body": text_value,
+                    "author": str(ticket_payload.get("last_replier") or ticket_payload.get("staff") or "").strip(),
+                    "created_at": str(ticket_payload.get("updated") or ticket_payload.get("lastupdate") or "").strip(),
+                    "entry_type": "fallback",
+                }
+            ]
+
+    return []
+
+
+def _extract_text_value(value: Any) -> str:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("body", "text", "message", "content", "note", "response", "value"):
+            nested = value.get(key)
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+    return ""
 
 
 def normalize_extended_status(ticket_payload: dict[str, Any]) -> str:
