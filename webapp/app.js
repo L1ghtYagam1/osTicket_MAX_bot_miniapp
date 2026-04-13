@@ -496,16 +496,22 @@ function activateAdminTab(tab) {
 async function loadCatalog() {
   state.catalog = await api.getCatalog();
 
-  byId("hotelSelect").innerHTML = state.catalog.hotels
-    .filter((item) => item.is_active)
-    .map((item) => `<option value="${item.id}">${item.name}</option>`)
-    .join("");
+  byId("hotelSelect").innerHTML = [
+    '<option value="">Выбрать</option>',
+    ...state.catalog.hotels
+      .filter((item) => item.is_active)
+      .map((item) => `<option value="${item.id}">${item.name}</option>`),
+  ].join("");
 
-  byId("categorySelect").innerHTML = state.catalog.categories
-    .filter((item) => item.is_active)
-    .map((item) => `<option value="${item.id}">${item.name}</option>`)
-    .join("");
+  byId("categorySelect").innerHTML = [
+    '<option value="">Выбрать</option>',
+    ...state.catalog.categories
+      .filter((item) => item.is_active)
+      .map((item) => `<option value="${item.id}">${item.name}</option>`),
+  ].join("");
 
+  byId("hotelSelect").value = "";
+  byId("categorySelect").value = "";
   fillTopics();
 }
 
@@ -513,10 +519,13 @@ function fillTopics() {
   const categoryId = Number(byId("categorySelect").value);
   const topicSelect = byId("topicSelect");
   const category = state.catalog?.categories.find((item) => item.id === categoryId);
-  topicSelect.innerHTML = (category?.topics || [])
-    .filter((item) => item.is_active)
-    .map((item) => `<option value="${item.id}">${item.name}</option>`)
-    .join("");
+  topicSelect.innerHTML = [
+    '<option value="">Выбрать</option>',
+    ...(category?.topics || [])
+      .filter((item) => item.is_active)
+      .map((item) => `<option value="${item.id}">${item.name}</option>`),
+  ].join("");
+  topicSelect.value = "";
 }
 
 async function requestCode() {
@@ -575,8 +584,20 @@ async function createTicket() {
   setSession();
   const result = byId("createResult");
   const submitButton = byId("createTicketBtn");
+  const hotelId = Number(byId("hotelSelect").value);
+  const categoryId = Number(byId("categorySelect").value);
+  const topicId = Number(byId("topicSelect").value);
+  const description = byId("descriptionInput").value.trim();
   if (!state.maxUserId) {
     result.textContent = "Сначала сохраните MAX User ID.";
+    return;
+  }
+  if (!hotelId || !categoryId || !topicId) {
+    result.textContent = "Выберите отель, категорию и тему заявки.";
+    return;
+  }
+  if (!description) {
+    result.textContent = "Опишите проблему перед отправкой заявки.";
     return;
   }
   if (submitButton.dataset.busy === "1") {
@@ -590,15 +611,18 @@ async function createTicket() {
   try {
     const data = await api.createTicket({
       max_user_id: state.maxUserId,
-      hotel_id: Number(byId("hotelSelect").value),
-      category_id: Number(byId("categorySelect").value),
-      topic_id: Number(byId("topicSelect").value),
-      description: byId("descriptionInput").value.trim(),
+      hotel_id: hotelId,
+      category_id: categoryId,
+      topic_id: topicId,
+      description,
     });
     byId("createSuccessText").textContent = `ID заявки: ${data.external_id}\nСтатус: ${data.current_status}`;
     byId("createFormCard").hidden = true;
     byId("createHintCard").hidden = true;
     byId("createSuccessCard").hidden = false;
+    byId("hotelSelect").value = "";
+    byId("categorySelect").value = "";
+    fillTopics();
     byId("descriptionInput").value = "";
   } catch (error) {
     result.textContent = error.message;
@@ -1097,6 +1121,108 @@ async function init() {
     activateTab("create");
   }
 }
+
+// Ticket view overrides for clean mobile layout.
+function renderTickets(tickets) {
+  const root = byId("ticketsList");
+  root.innerHTML = tickets.map((ticket) => `
+    <div class="list-item ticket-item" onclick="openTicketDetails('${ticket.external_id}')">
+      <div class="list-head">
+        <span>#${ticket.external_id}</span>
+        <span>${ticket.current_status}</span>
+      </div>
+      <div>${ticket.subject}</div>
+      <div class="ticket-actions">
+        <button class="primary full-width" onclick="event.stopPropagation(); openTicketDetails('${ticket.external_id}')">Открыть</button>
+      </div>
+      <div class="list-meta">${ticket.description}</div>
+      ${ticket.is_shared ? `<div class="list-meta">Владелец: ${ticket.owner_full_name || ticket.owner_work_email}</div>` : ""}
+    </div>
+  `).join("") || `<div class="list-item">Заявок пока нет.</div>`;
+}
+
+function closeTicketDetails() {
+  byId("ticketDetailsPageTitle").textContent = "Заявка";
+  byId("ticketDetailsPageInnerTitle").textContent = "Заявка";
+  byId("ticketDetailsPageMeta").hidden = true;
+  byId("ticketDetailsPageMeta").textContent = "";
+  byId("ticketDetailsPageDescription").hidden = true;
+  byId("ticketDetailsPageDescription").textContent = "";
+  byId("ticketThreadPageList").hidden = true;
+  byId("ticketThreadPageList").innerHTML = "";
+  byId("ticketDetailsPageMetaCards").innerHTML = "";
+  byId("ticketDetailsPageDescriptionCard").textContent = "";
+  byId("ticketThreadPageListCard").innerHTML = "";
+  activateTab("tickets");
+}
+
+function renderTicketThread(thread) {
+  if (!thread.length) {
+    return `<div class="list-item">Подробности по osTicket пока недоступны.</div>`;
+  }
+
+  return thread.map((entry) => `
+    <div class="list-item thread-entry">
+      <div class="thread-entry-head">
+        <span class="thread-entry-title">${entry.title || entry.author || "Сообщение"}</span>
+        <span class="thread-entry-date">${entry.created_at || entry.entry_type || ""}</span>
+      </div>
+      ${entry.author ? `<div class="thread-entry-author">${entry.author}</div>` : ""}
+      <div class="ticket-description">${entry.body}</div>
+    </div>
+  `).join("");
+}
+
+window.openTicketDetails = async function openTicketDetails(externalId) {
+  setSession();
+  const meta = byId("ticketDetailsPageMeta");
+  const description = byId("ticketDetailsPageDescription");
+  const threadRoot = byId("ticketThreadPageList");
+  const metaCards = byId("ticketDetailsPageMetaCards");
+  const descriptionCard = byId("ticketDetailsPageDescriptionCard");
+  const threadCard = byId("ticketThreadPageListCard");
+  byId("ticketDetailsPageTitle").textContent = `Заявка #${externalId}`;
+  byId("ticketDetailsPageInnerTitle").textContent = `Заявка #${externalId}`;
+  meta.hidden = true;
+  meta.textContent = "";
+  description.hidden = true;
+  description.textContent = "";
+  threadRoot.hidden = true;
+  threadRoot.innerHTML = "";
+  metaCards.innerHTML = "";
+  descriptionCard.textContent = "";
+  threadCard.innerHTML = "";
+  activateTab("ticket-view");
+
+  try {
+    const data = await api.getTicketDetails(state.maxUserId, externalId);
+    byId("ticketDetailsPageTitle").textContent = `${data.subject} #${data.external_id}`;
+    byId("ticketDetailsPageInnerTitle").textContent = `${data.subject} #${data.external_id}`;
+    metaCards.innerHTML = `
+      <div class="ticket-meta-card">
+        <div class="ticket-meta-label">Номер</div>
+        <div class="ticket-meta-value">#${data.external_id}</div>
+      </div>
+      <div class="ticket-meta-card">
+        <div class="ticket-meta-label">Статус</div>
+        <div class="ticket-meta-value">${data.current_status}</div>
+      </div>
+      <div class="ticket-meta-card">
+        <div class="ticket-meta-label">Тема</div>
+        <div class="ticket-meta-value">${data.subject}</div>
+      </div>
+      <div class="ticket-meta-card">
+        <div class="ticket-meta-label">Владелец</div>
+        <div class="ticket-meta-value">${data.owner_full_name || data.owner_work_email || "-"}</div>
+      </div>
+    `;
+    descriptionCard.textContent = data.description || "Описание не указано.";
+    threadCard.innerHTML = renderTicketThread(data.thread || []);
+  } catch (error) {
+    meta.hidden = false;
+    meta.textContent = error.message;
+  }
+};
 
 init().catch((error) => {
   console.error(error);

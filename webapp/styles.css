@@ -89,6 +89,10 @@ body {
   color: var(--muted);
 }
 
+#tab-ticket-view > .panel-head {
+  display: none;
+}
+
 .nav { display: grid; gap: 10px; }
 .nav-btn, button {
   border: 0;
@@ -264,14 +268,35 @@ input, select, textarea {
 
 .ticket-view-hero {
   margin: 16px 0 18px;
+  padding: 24px;
 }
 
 .ticket-view-toolbar {
   align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.ticket-view-toolbar h3 {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.1;
+}
+
+.ticket-view-toolbar button {
+  flex-shrink: 0;
+  padding-inline: 16px;
+  background: rgba(14, 122, 109, 0.1);
+  color: var(--accent);
+}
+
+.ticket-view-shell {
+  display: grid;
+  gap: 18px;
+  margin-top: 4px;
 }
 
 .ticket-view-kicker {
-  margin-bottom: 8px;
+  margin: 0;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -281,13 +306,13 @@ input, select, textarea {
 
 .ticket-view-grid {
   align-items: start;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
 }
 
 .ticket-meta-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  margin-top: 18px;
 }
 
 .ticket-meta-card {
@@ -309,14 +334,75 @@ input, select, textarea {
 }
 
 .ticket-description {
-  margin: 12px 0 16px;
+  margin: 0;
   white-space: pre-wrap;
   line-height: 1.55;
 }
 
 .thread-entry {
   display: grid;
-  gap: 6px;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 18px;
+  background: var(--input-bg);
+}
+
+.thread-entry-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.thread-entry-title {
+  display: block;
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.thread-entry-date {
+  display: block;
+  color: var(--ink);
+  text-align: right;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.thread-entry-author {
+  margin-top: -2px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+#ticketThreadPageListCard {
+  display: grid;
+  gap: 14px;
+  margin-top: 0;
+}
+
+.ticket-section-card {
+  padding: 22px;
+}
+
+.ticket-view-grid .card,
+.ticket-section-card {
+  margin-bottom: 0;
+}
+
+.ticket-section-card .list {
+  margin-top: 0;
+}
+
+.ticket-section-card h3 {
+  margin: 0 0 14px;
+  font-size: 30px;
+  line-height: 1.05;
+  color: var(--heading);
+}
+
+.ticket-view-legacy {
+  display: none !important;
 }
 
 @media (max-width: 1024px) {
@@ -348,5 +434,49 @@ input, select, textarea {
 
   .ticket-meta-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .ticket-view-hero {
+    padding: 18px;
+  }
+
+  .ticket-view-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ticket-view-toolbar h3 {
+    font-size: 22px;
+  }
+
+  .ticket-view-toolbar button {
+    align-self: flex-start;
+    width: auto;
+    max-width: 100%;
+  }
+
+  .ticket-section-card {
+    padding: 18px;
+  }
+
+  .ticket-section-card h3 {
+    font-size: 20px;
+  }
+
+  .thread-entry {
+    padding: 16px;
+  }
+
+  .thread-entry-head {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .thread-entry-date {
+    text-align: left;
+    font-size: 14px;
+    color: var(--muted);
+    white-space: normal;
   }
 }
