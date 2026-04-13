@@ -618,7 +618,7 @@ function renderTickets(tickets) {
       </div>
       <div>${ticket.subject}</div>
       <div class="ticket-actions">
-        <button class="primary full-width" onclick="event.stopPropagation(); openTicketDetails('${ticket.external_id}')">РћС‚РєСЂС‹С‚СЊ</button>
+        <button class="primary full-width" onclick="event.stopPropagation(); openTicketDetails('${ticket.external_id}')">Открыть</button>
       </div>
       <div class="list-meta">${ticket.description}</div>
       ${ticket.is_shared ? `<div class="list-meta">Владелец: ${ticket.owner_full_name || ticket.owner_work_email}</div>` : ""}
@@ -640,13 +640,13 @@ function closeTicketDetails() {
 
 function renderTicketThread(thread) {
   if (!thread.length) {
-    return `<div class="list-item">РџРѕРґСЂРѕР±РЅРѕСЃС‚Рё РїРѕ osTicket РїРѕРєР° РЅРµРґРѕСЃС‚СѓРїРЅС‹.</div>`;
+    return `<div class="list-item">Подробности по osTicket пока недоступны.</div>`;
   }
 
   return thread.map((entry) => `
     <div class="list-item thread-entry">
       <div class="list-head">
-        <span>${entry.title || entry.author || "РЎРѕРѕР±С‰РµРЅРёРµ"}</span>
+        <span>${entry.title || entry.author || "Сообщение"}</span>
         <span>${entry.created_at || entry.entry_type || ""}</span>
       </div>
       ${entry.author ? `<div class="list-meta">${entry.author}</div>` : ""}
@@ -665,7 +665,7 @@ window.openTicketDetails = async function openTicketDetails(externalId) {
   const threadCard = byId("ticketThreadPageListCard");
   byId("ticketDetailsPageTitle").textContent = `Заявка #${externalId}`;
   byId("ticketDetailsPageInnerTitle").textContent = `Заявка #${externalId}`;
-  meta.textContent = "Р—Р°РіСЂСѓР·РєР°...";
+  meta.textContent = "Загрузка...";
   description.textContent = "";
   threadRoot.innerHTML = "";
   metaCards.innerHTML = "";
