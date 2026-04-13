@@ -279,7 +279,19 @@ class OsTicketClient:
     async def get_extended_ticket_details(self, external_ticket_id: str) -> dict[str, Any]:
         candidate_errors: list[str] = []
 
-        # Variant 1: plugins that expect /tickets-get.php/<ticket_id>.
+        # Variant 1: plugins that expect /tickets-get.php/{ticket_number}.json.
+        try:
+            data = await self._call_extended_api(
+                "GET",
+                f"/tickets-get.php/{str(external_ticket_id)}.json",
+            )
+            ticket = extract_extended_ticket(data)
+            if ticket:
+                return ticket
+        except Exception as exc:
+            candidate_errors.append(str(exc))
+
+        # Variant 2: plugins that expect /tickets-get.php/<ticket_id>.
         try:
             data = await self._call_extended_api(
                 "GET",
@@ -291,7 +303,7 @@ class OsTicketClient:
         except Exception as exc:
             candidate_errors.append(str(exc))
 
-        # Variant 2: plugins that expect /tickets-get.php?number=<ticket_number>.
+        # Variant 3: plugins that expect /tickets-get.php?number=<ticket_number>.
         try:
             data = await self._call_extended_api(
                 "GET",
@@ -304,7 +316,7 @@ class OsTicketClient:
         except Exception as exc:
             candidate_errors.append(str(exc))
 
-        # Variant 3: fallback through search endpoint.
+        # Variant 4: fallback through search endpoint.
         try:
             data = await self._call_extended_api(
                 "GET",
