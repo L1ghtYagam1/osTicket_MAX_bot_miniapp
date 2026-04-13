@@ -66,6 +66,10 @@ body {
 .brand-title { font-size: 20px; font-weight: 700; }
 .brand-subtitle { font-size: 13px; color: var(--muted); }
 
+#createHintText {
+  white-space: pre-line;
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--line);
