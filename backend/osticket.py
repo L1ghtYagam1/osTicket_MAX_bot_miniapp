@@ -277,14 +277,48 @@ class OsTicketClient:
             raise RuntimeError("Timeout while reading ticket status from osTicket") from exc
 
     async def get_extended_ticket_details(self, external_ticket_id: str) -> dict[str, Any]:
-        data = await self._call_extended_api(
-            "GET",
-            f"/tickets-get.php/{self._numeric_ticket_id(external_ticket_id)}",
-        )
-        ticket = extract_extended_ticket(data)
-        if not ticket:
-            raise RuntimeError("Extended API ticket details not found")
-        return ticket
+        candidate_errors: list[str] = []
+
+        # Variant 1: plugins that expect /tickets-get.php/<ticket_id>.
+        try:
+            data = await self._call_extended_api(
+                "GET",
+                f"/tickets-get.php/{self._numeric_ticket_id(external_ticket_id)}",
+            )
+            ticket = extract_extended_ticket(data)
+            if ticket:
+                return ticket
+        except Exception as exc:
+            candidate_errors.append(str(exc))
+
+        # Variant 2: plugins that expect /tickets-get.php?number=<ticket_number>.
+        try:
+            data = await self._call_extended_api(
+                "GET",
+                "/tickets-get.php",
+                params={"number": str(external_ticket_id)},
+            )
+            ticket = extract_extended_ticket(data)
+            if ticket:
+                return ticket
+        except Exception as exc:
+            candidate_errors.append(str(exc))
+
+        # Variant 3: fallback through search endpoint.
+        try:
+            data = await self._call_extended_api(
+                "GET",
+                "/tickets-search.php",
+                params={"query": str(external_ticket_id)},
+            )
+            ticket = extract_extended_ticket(data)
+            if ticket:
+                return ticket
+        except Exception as exc:
+            candidate_errors.append(str(exc))
+
+        details = " | ".join(candidate_errors) if candidate_errors else "no response from extended API"
+        raise RuntimeError(f"Extended API ticket details not found for {external_ticket_id}: {details}")
 
     async def reply_to_ticket(self, external_ticket_id: str, *, message: str) -> dict[str, Any]:
         return await self._call_extended_api(
