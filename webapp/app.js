@@ -1219,6 +1219,42 @@ window.openTicketDetails = async function openTicketDetails(externalId) {
   }
 };
 
+// Auth-based navigation visibility:
+// - guest: show only Email binding
+// - authorized: hide Email binding, show work sections
+function updateBindVisibility() {
+  const bindNavBtn = document.querySelector('.nav-btn[data-tab="bind"]');
+  const bindPanel = byId("tab-bind");
+  const createNavBtn = document.querySelector('.nav-btn[data-tab="create"]');
+  const ticketsNavBtn = document.querySelector('.nav-btn[data-tab="tickets"]');
+  const createPanel = byId("tab-create");
+  const ticketsPanel = byId("tab-tickets");
+  const bindSummary = byId("bindSummary");
+  const hasVerifiedEmail = Boolean(state.user && state.user.work_email);
+
+  bindNavBtn.hidden = hasVerifiedEmail;
+  bindPanel.hidden = hasVerifiedEmail;
+  createNavBtn.hidden = !hasVerifiedEmail;
+  ticketsNavBtn.hidden = !hasVerifiedEmail;
+  createPanel.hidden = !hasVerifiedEmail;
+  ticketsPanel.hidden = !hasVerifiedEmail;
+
+  if (hasVerifiedEmail) {
+    byId("emailInput").value = state.user.work_email || "";
+    bindSummary.hidden = false;
+    bindSummary.textContent = `Рабочая почта уже подтверждена: ${state.user.work_email}`;
+    if (bindNavBtn.classList.contains("active")) {
+      activateTab("create");
+    }
+  } else {
+    bindSummary.hidden = true;
+    bindSummary.textContent = "";
+    if (createNavBtn.classList.contains("active") || ticketsNavBtn.classList.contains("active")) {
+      activateTab("bind");
+    }
+  }
+}
+
 init().catch((error) => {
   console.error(error);
   alert(error.message);
