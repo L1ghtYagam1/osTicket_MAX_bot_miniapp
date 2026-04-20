@@ -350,25 +350,6 @@ function updateAdminVisibility() {
   }
 }
 
-function updateBindVisibility() {
-  const bindNavBtn = document.querySelector('.nav-btn[data-tab="bind"]');
-  const bindPanel = byId("tab-bind");
-  const bindSummary = byId("bindSummary");
-  const hasVerifiedEmail = Boolean(state.user && state.user.work_email);
-
-  bindNavBtn.hidden = false;
-  bindPanel.hidden = false;
-
-  if (hasVerifiedEmail) {
-    byId("emailInput").value = state.user.work_email || "";
-    bindSummary.hidden = false;
-    bindSummary.textContent = `Рабочая почта уже подтверждена: ${state.user.work_email}`;
-  } else {
-    bindSummary.hidden = true;
-    bindSummary.textContent = "";
-  }
-}
-
 function updateSessionVisibility() {
   byId("sessionCard").hidden = true;
 }
@@ -1070,7 +1051,7 @@ async function init() {
   updateAdminVisibility();
   updateBindVisibility();
   updateSessionVisibility();
-  activateTab("bind");
+  activateTab(state.user && state.user.work_email ? "create" : "bind");
 
   document.querySelectorAll(".nav-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -1229,6 +1210,7 @@ function updateBindVisibility() {
   const ticketsNavBtn = document.querySelector('.nav-btn[data-tab="tickets"]');
   const createPanel = byId("tab-create");
   const ticketsPanel = byId("tab-tickets");
+  const authStatusBadge = byId("authStatusBadge");
   const bindSummary = byId("bindSummary");
   const hasVerifiedEmail = Boolean(state.user && state.user.work_email);
 
@@ -1238,11 +1220,15 @@ function updateBindVisibility() {
   ticketsNavBtn.hidden = !hasVerifiedEmail;
   createPanel.hidden = !hasVerifiedEmail;
   ticketsPanel.hidden = !hasVerifiedEmail;
+  if (authStatusBadge) {
+    authStatusBadge.hidden = !hasVerifiedEmail;
+    authStatusBadge.textContent = hasVerifiedEmail ? "Вы успешно авторизованы." : "";
+  }
 
   if (hasVerifiedEmail) {
     byId("emailInput").value = state.user.work_email || "";
-    bindSummary.hidden = false;
-    bindSummary.textContent = `Рабочая почта уже подтверждена: ${state.user.work_email}`;
+    bindSummary.hidden = true;
+    bindSummary.textContent = "";
     if (bindNavBtn.classList.contains("active")) {
       activateTab("create");
     }

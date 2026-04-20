@@ -81,6 +81,17 @@ body {
 
 .panel { display: none; }
 .panel.active { display: block; }
+.panel[hidden] { display: none !important; }
+
+.auth-status {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(14, 122, 109, 0.08);
+  color: var(--accent);
+  font-weight: 600;
+}
 
 .panel-head h1 {
   margin: 0 0 8px;
