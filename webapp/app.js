@@ -356,16 +356,13 @@ function updateBindVisibility() {
   const bindSummary = byId("bindSummary");
   const hasVerifiedEmail = Boolean(state.user && state.user.work_email);
 
-  bindNavBtn.hidden = hasVerifiedEmail;
-  bindPanel.hidden = hasVerifiedEmail;
+  bindNavBtn.hidden = false;
+  bindPanel.hidden = false;
 
   if (hasVerifiedEmail) {
     byId("emailInput").value = state.user.work_email || "";
     bindSummary.hidden = false;
     bindSummary.textContent = `Рабочая почта уже подтверждена: ${state.user.work_email}`;
-    if (bindNavBtn.classList.contains("active")) {
-      activateTab("create");
-    }
   } else {
     bindSummary.hidden = true;
     bindSummary.textContent = "";
@@ -373,7 +370,7 @@ function updateBindVisibility() {
 }
 
 function updateSessionVisibility() {
-  byId("sessionCard").hidden = Boolean(state.user && state.user.work_email);
+  byId("sessionCard").hidden = true;
 }
 
 function applyKnownUser(user) {
@@ -1073,6 +1070,7 @@ async function init() {
   updateAdminVisibility();
   updateBindVisibility();
   updateSessionVisibility();
+  activateTab("bind");
 
   document.querySelectorAll(".nav-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -1117,9 +1115,6 @@ async function init() {
 
   await loadCatalog();
   resetCreateFormVisibility();
-  if (state.user && state.user.work_email) {
-    activateTab("create");
-  }
 }
 
 // Ticket view overrides for clean mobile layout.
