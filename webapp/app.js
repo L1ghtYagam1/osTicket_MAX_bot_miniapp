@@ -239,6 +239,15 @@ function byId(id) {
   return document.getElementById(id);
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function setLaunchStatus(message) {
   byId("maxLaunchStatus").textContent = message;
 }
@@ -276,7 +285,7 @@ function applyBranding() {
 
   const markNode = byId("brandMark");
   if (settings.brand_icon_url) {
-    markNode.innerHTML = `<img src="${settings.brand_icon_url}" alt="Иконка" style="width:100%;height:100%;object-fit:cover;border-radius:16px;">`;
+    markNode.innerHTML = `<img src="${escapeHtml(settings.brand_icon_url)}" alt="Иконка" style="width:100%;height:100%;object-fit:cover;border-radius:16px;">`;
   } else {
     markNode.textContent = settings.brand_mark || "MS";
   }
@@ -478,14 +487,14 @@ async function loadCatalog() {
     '<option value="">Выбрать</option>',
     ...state.catalog.hotels
       .filter((item) => item.is_active)
-      .map((item) => `<option value="${item.id}">${item.name}</option>`),
+      .map((item) => `<option value="${Number(item.id)}">${escapeHtml(item.name)}</option>`),
   ].join("");
 
   byId("categorySelect").innerHTML = [
     '<option value="">Выбрать</option>',
     ...state.catalog.categories
       .filter((item) => item.is_active)
-      .map((item) => `<option value="${item.id}">${item.name}</option>`),
+      .map((item) => `<option value="${Number(item.id)}">${escapeHtml(item.name)}</option>`),
   ].join("");
 
   byId("hotelSelect").value = "";
@@ -501,7 +510,7 @@ function fillTopics() {
     '<option value="">Выбрать</option>',
     ...(category?.topics || [])
       .filter((item) => item.is_active)
-      .map((item) => `<option value="${item.id}">${item.name}</option>`),
+      .map((item) => `<option value="${Number(item.id)}">${escapeHtml(item.name)}</option>`),
   ].join("");
   topicSelect.value = "";
 }
@@ -542,6 +551,10 @@ async function bindEmail() {
       email,
       code,
     });
+    if (data.access_token) {
+      state.accessToken = data.access_token;
+      persistSession();
+    }
     applyKnownUser(data);
     result.textContent = `Почта подтверждена: ${data.work_email}`;
     activateTab("create");
@@ -610,103 +623,6 @@ async function createTicket() {
   }
 }
 
-function renderTickets(tickets) {
-  const root = byId("ticketsList");
-  root.innerHTML = tickets.map((ticket) => `
-    <div class="list-item ticket-item" onclick="openTicketDetails('${ticket.external_id}')">
-      <div class="list-head">
-        <span>#${ticket.external_id}</span>
-        <span>${ticket.current_status}</span>
-      </div>
-      <div>${ticket.subject}</div>
-      <div class="ticket-actions">
-        <button class="primary full-width" onclick="event.stopPropagation(); openTicketDetails('${ticket.external_id}')">Открыть</button>
-      </div>
-      <div class="list-meta">${ticket.description}</div>
-      ${ticket.is_shared ? `<div class="list-meta">Владелец: ${ticket.owner_full_name || ticket.owner_work_email}</div>` : ""}
-    </div>
-  `).join("") || `<div class="list-item">Заявок пока нет.</div>`;
-}
-
-function closeTicketDetails() {
-  byId("ticketDetailsPageTitle").textContent = "Заявка";
-  byId("ticketDetailsPageInnerTitle").textContent = "Заявка";
-  byId("ticketDetailsPageMeta").textContent = "";
-  byId("ticketDetailsPageDescription").textContent = "";
-  byId("ticketThreadPageList").innerHTML = "";
-  byId("ticketDetailsPageMetaCards").innerHTML = "";
-  byId("ticketDetailsPageDescriptionCard").textContent = "";
-  byId("ticketThreadPageListCard").innerHTML = "";
-  activateTab("tickets");
-}
-
-function renderTicketThread(thread) {
-  if (!thread.length) {
-    return `<div class="list-item">Подробности по osTicket пока недоступны.</div>`;
-  }
-
-  return thread.map((entry) => `
-    <div class="list-item thread-entry">
-      <div class="list-head">
-        <span>${entry.title || entry.author || "Сообщение"}</span>
-        <span>${entry.created_at || entry.entry_type || ""}</span>
-      </div>
-      ${entry.author ? `<div class="list-meta">${entry.author}</div>` : ""}
-      <div class="ticket-description">${entry.body}</div>
-    </div>
-  `).join("");
-}
-
-window.openTicketDetails = async function openTicketDetails(externalId) {
-  setSession();
-  const meta = byId("ticketDetailsPageMeta");
-  const description = byId("ticketDetailsPageDescription");
-  const threadRoot = byId("ticketThreadPageList");
-  const metaCards = byId("ticketDetailsPageMetaCards");
-  const descriptionCard = byId("ticketDetailsPageDescriptionCard");
-  const threadCard = byId("ticketThreadPageListCard");
-  byId("ticketDetailsPageTitle").textContent = `Заявка #${externalId}`;
-  byId("ticketDetailsPageInnerTitle").textContent = `Заявка #${externalId}`;
-  meta.textContent = "Загрузка...";
-  description.textContent = "";
-  threadRoot.innerHTML = "";
-  metaCards.innerHTML = "";
-  descriptionCard.textContent = "";
-  threadCard.innerHTML = "";
-  activateTab("ticket-view");
-
-  try {
-    const data = await api.getTicketDetails(state.maxUserId, externalId);
-    byId("ticketDetailsPageTitle").textContent = `${data.subject} #${data.external_id}`;
-    byId("ticketDetailsPageInnerTitle").textContent = `${data.subject} #${data.external_id}`;
-    meta.textContent = "";
-    metaCards.innerHTML = `
-      <div class="ticket-meta-card">
-        <div class="ticket-meta-label">Номер</div>
-        <div class="ticket-meta-value">#${data.external_id}</div>
-      </div>
-      <div class="ticket-meta-card">
-        <div class="ticket-meta-label">Статус</div>
-        <div class="ticket-meta-value">${data.current_status}</div>
-      </div>
-      <div class="ticket-meta-card">
-        <div class="ticket-meta-label">Тема</div>
-        <div class="ticket-meta-value">${data.subject}</div>
-      </div>
-      <div class="ticket-meta-card">
-        <div class="ticket-meta-label">Владелец</div>
-        <div class="ticket-meta-value">${data.owner_full_name || data.owner_work_email || "-"}</div>
-      </div>
-    `;
-    description.textContent = data.description || "";
-    threadRoot.innerHTML = renderTicketThread(data.thread || []);
-    descriptionCard.textContent = data.description || "Описание не указано.";
-    threadCard.innerHTML = renderTicketThread(data.thread || []);
-  } catch (error) {
-    meta.textContent = error.message;
-  }
-};
-
 async function refreshTickets() {
   setSession();
   const root = byId("ticketsList");
@@ -718,18 +634,19 @@ async function refreshTickets() {
     const tickets = await api.getTickets(state.maxUserId);
     renderTickets(tickets);
   } catch (error) {
-    root.innerHTML = `<div class="list-item">${error.message}</div>`;
+    root.innerHTML = `<div class="list-item">${escapeHtml(error.message)}</div>`;
   }
 }
 
 function renderAdminList(items, rootId, type) {
   const root = byId(rootId);
   root.innerHTML = items.map((item) => {
+    const name = escapeHtml(item.name);
     const title = type === "categories"
-      ? `${item.name} (topicId: ${item.osticket_topic_id})`
+      ? `${name} (topicId: ${escapeHtml(item.osticket_topic_id)})`
       : type === "topics"
-        ? `${item.name} (category: ${item.category_id})`
-        : item.name;
+        ? `${name} (category: ${escapeHtml(item.category_id)})`
+        : name;
     return `
       <div class="list-item">
         <div class="list-head">
@@ -737,7 +654,7 @@ function renderAdminList(items, rootId, type) {
           <span>${item.is_active ? "active" : "inactive"}</span>
         </div>
         <div class="admin-actions">
-          <button onclick="editItem('${type}', ${item.id})">Редактировать</button>
+          <button onclick="editItem('${escapeHtml(type)}', ${Number(item.id)})">Редактировать</button>
         </div>
       </div>
     `;
@@ -749,15 +666,15 @@ function renderUsers(items) {
   root.innerHTML = items.map((item) => `
     <div class="list-item">
       <div class="list-head">
-        <span>${item.full_name || item.work_email || item.max_user_id}</span>
+        <span>${escapeHtml(item.full_name || item.work_email || item.max_user_id)}</span>
         <span>${item.is_admin ? "admin" : "user"}</span>
       </div>
-      <div class="list-meta">${item.work_email || "Почта не привязана"}</div>
-      <div class="list-meta">MAX: ${item.max_user_id} | ${item.is_active ? "active" : "inactive"}</div>
+      <div class="list-meta">${escapeHtml(item.work_email || "Почта не привязана")}</div>
+      <div class="list-meta">MAX: ${escapeHtml(item.max_user_id)} | ${item.is_active ? "active" : "inactive"}</div>
       <div class="admin-actions wrap">
-        <button onclick="editUser(${item.id})">Профиль</button>
-        <button onclick="toggleAdmin(${item.id})">${item.is_admin ? "Снять админку" : "Сделать админом"}</button>
-        <button onclick="manageAccess(${item.id})">Права на заявки</button>
+        <button onclick="editUser(${Number(item.id)})">Профиль</button>
+        <button onclick="toggleAdmin(${Number(item.id)})">${item.is_admin ? "Снять админку" : "Сделать админом"}</button>
+        <button onclick="manageAccess(${Number(item.id)})">Права на заявки</button>
       </div>
     </div>
   `).join("") || `<div class="list-item">Пусто</div>`;
@@ -768,11 +685,11 @@ function renderAuditLogs(items) {
   root.innerHTML = items.map((item) => `
     <div class="list-item">
       <div class="list-head">
-        <span>${item.action} ${item.entity_type}#${item.entity_id}</span>
-        <span>${new Date(item.created_at).toLocaleString("ru-RU")}</span>
+        <span>${escapeHtml(item.action)} ${escapeHtml(item.entity_type)}#${escapeHtml(item.entity_id)}</span>
+        <span>${escapeHtml(new Date(item.created_at).toLocaleString("ru-RU"))}</span>
       </div>
-      <div class="list-meta">actor_user_id: ${item.actor_user_id}</div>
-      <div class="list-meta">${item.details_json}</div>
+      <div class="list-meta">actor_user_id: ${escapeHtml(item.actor_user_id)}</div>
+      <div class="list-meta">${escapeHtml(item.details_json)}</div>
     </div>
   `).join("") || `<div class="list-item">Пусто</div>`;
 }
@@ -799,7 +716,7 @@ async function loadAdmin() {
     renderAdminList(topics, "topicsAdminList", "topics");
     renderAuditLogs(auditLogs);
   } catch (error) {
-    const message = `<div class="list-item">${error.message}</div>`;
+    const message = `<div class="list-item">${escapeHtml(error.message)}</div>`;
     byId("usersAdminList").innerHTML = message;
     byId("hotelsAdminList").innerHTML = message;
     byId("categoriesAdminList").innerHTML = message;
@@ -1101,20 +1018,25 @@ async function init() {
 // Ticket view overrides for clean mobile layout.
 function renderTickets(tickets) {
   const root = byId("ticketsList");
-  root.innerHTML = tickets.map((ticket) => `
-    <div class="list-item ticket-item" onclick="openTicketDetails('${ticket.external_id}')">
+  root.innerHTML = tickets.map((ticket) => {
+    const externalId = escapeHtml(ticket.external_id);
+    const externalIdAttr = encodeURIComponent(ticket.external_id);
+    const owner = escapeHtml(ticket.owner_full_name || ticket.owner_work_email);
+    return `
+    <div class="list-item ticket-item" onclick="openTicketDetails(decodeURIComponent('${externalIdAttr}'))">
       <div class="list-head">
-        <span>#${ticket.external_id}</span>
-        <span>${ticket.current_status}</span>
+        <span>#${externalId}</span>
+        <span>${escapeHtml(ticket.current_status)}</span>
       </div>
-      <div>${ticket.subject}</div>
+      <div>${escapeHtml(ticket.subject)}</div>
       <div class="ticket-actions">
-        <button class="primary full-width" onclick="event.stopPropagation(); openTicketDetails('${ticket.external_id}')">Открыть</button>
+        <button class="primary full-width" onclick="event.stopPropagation(); openTicketDetails(decodeURIComponent('${externalIdAttr}'))">Открыть</button>
       </div>
-      <div class="list-meta">${ticket.description}</div>
-      ${ticket.is_shared ? `<div class="list-meta">Владелец: ${ticket.owner_full_name || ticket.owner_work_email}</div>` : ""}
+      <div class="list-meta">${escapeHtml(ticket.description)}</div>
+      ${ticket.is_shared ? `<div class="list-meta">Владелец: ${owner}</div>` : ""}
     </div>
-  `).join("") || `<div class="list-item">Заявок пока нет.</div>`;
+  `;
+  }).join("") || `<div class="list-item">Заявок пока нет.</div>`;
 }
 
 function closeTicketDetails() {
@@ -1140,11 +1062,11 @@ function renderTicketThread(thread) {
   return thread.map((entry) => `
     <div class="list-item thread-entry">
       <div class="thread-entry-head">
-        <span class="thread-entry-title">${entry.title || entry.author || "Сообщение"}</span>
-        <span class="thread-entry-date">${entry.created_at || entry.entry_type || ""}</span>
+        <span class="thread-entry-title">${escapeHtml(entry.title || entry.author || "Сообщение")}</span>
+        <span class="thread-entry-date">${escapeHtml(entry.created_at || entry.entry_type || "")}</span>
       </div>
-      ${entry.author ? `<div class="thread-entry-author">${entry.author}</div>` : ""}
-      <div class="ticket-description">${entry.body}</div>
+      ${entry.author ? `<div class="thread-entry-author">${escapeHtml(entry.author)}</div>` : ""}
+      <div class="ticket-description">${escapeHtml(entry.body)}</div>
     </div>
   `).join("");
 }
@@ -1177,19 +1099,19 @@ window.openTicketDetails = async function openTicketDetails(externalId) {
     metaCards.innerHTML = `
       <div class="ticket-meta-card">
         <div class="ticket-meta-label">Номер</div>
-        <div class="ticket-meta-value">#${data.external_id}</div>
+        <div class="ticket-meta-value">#${escapeHtml(data.external_id)}</div>
       </div>
       <div class="ticket-meta-card">
         <div class="ticket-meta-label">Статус</div>
-        <div class="ticket-meta-value">${data.current_status}</div>
+        <div class="ticket-meta-value">${escapeHtml(data.current_status)}</div>
       </div>
       <div class="ticket-meta-card">
         <div class="ticket-meta-label">Тема</div>
-        <div class="ticket-meta-value">${data.subject}</div>
+        <div class="ticket-meta-value">${escapeHtml(data.subject)}</div>
       </div>
       <div class="ticket-meta-card">
         <div class="ticket-meta-label">Владелец</div>
-        <div class="ticket-meta-value">${data.owner_full_name || data.owner_work_email || "-"}</div>
+        <div class="ticket-meta-value">${escapeHtml(data.owner_full_name || data.owner_work_email || "-")}</div>
       </div>
     `;
     descriptionCard.textContent = data.description || "Описание не указано.";

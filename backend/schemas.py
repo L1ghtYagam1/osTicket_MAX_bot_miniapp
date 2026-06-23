@@ -33,6 +33,18 @@ class WebAppSessionOut(BaseModel):
     access_token: str
 
 
+class VerifiedUserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    max_user_id: str
+    full_name: str
+    work_email: str
+    is_admin: bool
+    is_active: bool
+    access_token: str = ""
+
+
 class AppSettingsOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -120,7 +132,6 @@ class UserOut(BaseModel):
     work_email: str
     is_admin: bool
     is_active: bool
-    can_manage_admins: bool = False
 
 
 class UserUpdateRequest(BaseModel):

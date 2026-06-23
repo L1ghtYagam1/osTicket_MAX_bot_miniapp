@@ -1,4 +1,6 @@
+import hmac
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
@@ -6,6 +8,7 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, s
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -21,7 +24,6 @@ from .schemas import (
     AppUiSettingsOut,
     AppUiSettingsUpdateRequest,
     AppSettingsUpdateRequest,
-    BindEmailRequest,
     CatalogOut,
     CategoryCreateRequest,
     CategoryOut,
@@ -47,12 +49,12 @@ from .schemas import (
     UserTicketAccessUpdateRequest,
     UserOut,
     UserUpdateRequest,
+    VerifiedUserOut,
     VerifyEmailCodeRequest,
     WebAppSessionOut,
     WebAppSessionRequest,
 )
 from .services import (
-    bind_user_email,
     create_category_record,
     create_hotel_record,
     create_ticket,
@@ -104,10 +106,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+# При wildcard-origin браузеры всё равно запрещают credentials, а сочетание
+# allow_origins=["*"] + allow_credentials=True небезопасно. Поэтому credentials
+# включаем только когда заданы конкретные домены.
+_cors_origins = settings.cors_origins
+_cors_allow_credentials = "*" not in _cors_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -162,9 +169,41 @@ def require_internal_token(
 ) -> str:
     if not settings.internal_api_token:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Internal API token is not configured")
-    if x_internal_token != settings.internal_api_token:
+    if not hmac.compare_digest(x_internal_token, settings.internal_api_token):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid internal API token")
     return x_internal_token
+
+
+@dataclass
+class Actor:
+    """Кто выполняет запрос: доверенный бот (internal) или пользователь web app (session)."""
+
+    is_internal: bool
+    max_user_id: str | None
+
+
+def require_actor(
+    authorization: str = Header(default="", alias="Authorization"),
+    x_internal_token: str = Header(default="", alias="X-Internal-Token"),
+) -> Actor:
+    if x_internal_token and settings.internal_api_token and hmac.compare_digest(
+        x_internal_token, settings.internal_api_token
+    ):
+        return Actor(is_internal=True, max_user_id=None)
+    try:
+        token = _extract_bearer_token(authorization)
+        principal = verify_session_token(token)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    return Actor(is_internal=False, max_user_id=principal.max_user_id)
+
+
+def authorize_actor_for(actor: Actor, requested_max_user_id: str) -> None:
+    """Бот может действовать за любого пользователя; web-сессия — только за себя."""
+    if actor.is_internal:
+        return
+    if actor.max_user_id != str(requested_max_user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
 
 def bind_if_known(db: Session, max_user_id: str):
@@ -195,31 +234,28 @@ async def webapp_index() -> FileResponse:
     )
 
 
-@app.post("/api/v1/auth/bind-email", response_model=UserOut)
-async def bind_email(payload: BindEmailRequest, db: Session = Depends(get_db)) -> UserOut:
-    try:
-        user = bind_user_email(db, payload.max_user_id, payload.full_name, str(payload.email))
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return UserOut.model_validate(user)
-
-
 @app.post("/api/v1/auth/request-email-code", response_model=MessageOut)
 async def request_email_code_endpoint(payload: RequestEmailCodeRequest, db: Session = Depends(get_db)) -> MessageOut:
     try:
-        request_email_code(db, payload.max_user_id, payload.full_name, str(payload.email))
+        await run_in_threadpool(
+            request_email_code, db, payload.max_user_id, payload.full_name, str(payload.email)
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return MessageOut(message="Код подтверждения отправлен")
 
 
-@app.post("/api/v1/auth/verify-email-code", response_model=UserOut)
-async def verify_email_code_endpoint(payload: VerifyEmailCodeRequest, db: Session = Depends(get_db)) -> UserOut:
+@app.post("/api/v1/auth/verify-email-code", response_model=VerifiedUserOut)
+async def verify_email_code_endpoint(payload: VerifyEmailCodeRequest, db: Session = Depends(get_db)) -> VerifiedUserOut:
     try:
         user = verify_email_code(db, payload.max_user_id, payload.full_name, str(payload.email), payload.code)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return UserOut.model_validate(user)
+    # Владение почтой подтверждено — выдаём подписанный сессионный токен.
+    access_token = create_session_token(max_user_id=user.max_user_id, full_name=user.full_name or "")
+    result = VerifiedUserOut.model_validate(user)
+    result.access_token = access_token
+    return result
 
 
 @app.post("/api/v1/auth/webapp-session", response_model=WebAppSessionOut)
@@ -243,7 +279,12 @@ async def auth_me(current_user: User = Depends(require_current_user)) -> UserOut
 
 
 @app.get("/api/v1/users/by-max/{max_user_id}", response_model=UserOut)
-async def get_user_by_max(max_user_id: str, db: Session = Depends(get_db)) -> UserOut:
+async def get_user_by_max(
+    max_user_id: str,
+    db: Session = Depends(get_db),
+    actor: Actor = Depends(require_actor),
+) -> UserOut:
+    authorize_actor_for(actor, max_user_id)
     user = bind_if_known(db, max_user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -280,7 +321,12 @@ async def integration_settings(db: Session = Depends(get_db)) -> IntegrationSett
 
 
 @app.post("/api/v1/tickets", response_model=TicketOut)
-async def create_ticket_endpoint(payload: TicketCreateRequest, db: Session = Depends(get_db)) -> TicketOut:
+async def create_ticket_endpoint(
+    payload: TicketCreateRequest,
+    db: Session = Depends(get_db),
+    actor: Actor = Depends(require_actor),
+) -> TicketOut:
+    authorize_actor_for(actor, payload.max_user_id)
     try:
         ticket = await create_ticket(
             db,
@@ -299,13 +345,24 @@ async def create_ticket_endpoint(payload: TicketCreateRequest, db: Session = Dep
 
 
 @app.get("/api/v1/tickets", response_model=list[TicketOut])
-async def list_tickets(max_user_id: str, db: Session = Depends(get_db)) -> list[TicketOut]:
+async def list_tickets(
+    max_user_id: str,
+    db: Session = Depends(get_db),
+    actor: Actor = Depends(require_actor),
+) -> list[TicketOut]:
+    authorize_actor_for(actor, max_user_id)
     tickets = await enrich_tickets_status(db, list_user_tickets(db, max_user_id))
     return [TicketOut.model_validate(item) for item in tickets]
 
 
 @app.get("/api/v1/tickets/{external_id}", response_model=TicketDetailsOut)
-async def get_ticket_details_endpoint(external_id: str, max_user_id: str, db: Session = Depends(get_db)) -> TicketDetailsOut:
+async def get_ticket_details_endpoint(
+    external_id: str,
+    max_user_id: str,
+    db: Session = Depends(get_db),
+    actor: Actor = Depends(require_actor),
+) -> TicketDetailsOut:
+    authorize_actor_for(actor, max_user_id)
     try:
         details = await get_ticket_details(db, max_user_id, external_id)
     except ValueError as exc:
@@ -314,7 +371,13 @@ async def get_ticket_details_endpoint(external_id: str, max_user_id: str, db: Se
 
 
 @app.get("/api/v1/tickets/{external_id}/status", response_model=TicketStatusOut)
-async def get_ticket_status(external_id: str, max_user_id: str, db: Session = Depends(get_db)) -> TicketStatusOut:
+async def get_ticket_status(
+    external_id: str,
+    max_user_id: str,
+    db: Session = Depends(get_db),
+    actor: Actor = Depends(require_actor),
+) -> TicketStatusOut:
+    authorize_actor_for(actor, max_user_id)
     tickets = list_user_tickets(db, max_user_id)
     ticket = next((item for item in tickets if item.external_id == external_id), None)
     if ticket is None:
@@ -677,6 +740,11 @@ async def admin_update_user_ticket_access(
         details={"owner_user_ids": payload.owner_user_ids},
     )
     return [UserTicketAccessItemOut(**item) for item in items]
+
+
+@app.get("/api/v1/internal/users", response_model=list[UserOut], dependencies=[Depends(require_internal_token)])
+async def internal_users(db: Session = Depends(get_db)) -> list[UserOut]:
+    return [UserOut.model_validate(item) for item in list_users(db)]
 
 
 @app.post("/api/v1/internal/ticket-status-sync", response_model=list[TicketStatusNotificationOut], dependencies=[Depends(require_internal_token)])

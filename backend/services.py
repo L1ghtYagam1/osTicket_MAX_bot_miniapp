@@ -1,6 +1,6 @@
-import random
 import re
 import json
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -104,7 +104,7 @@ def request_email_code(db: Session, max_user_id: str, full_name: str, email: str
         raise ValueError("Некорректный email")
 
     validate_allowed_email_domain(email)
-    code = f"{random.randint(100000, 999999)}"
+    code = f"{secrets.randbelow(900000) + 100000}"
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(minutes=settings.email_verification_ttl_minutes)
     old_codes = list(
@@ -564,8 +564,14 @@ async def enrich_ticket_status(db: Session, ticket: Ticket) -> Ticket:
                 ticket.external_id,
                 use_extended_api=is_extended_api_enabled(db),
             )
-            ticket.status = current_status
+            if current_status and current_status != ticket.status:
+                ticket.status = current_status
+                db.commit()
+                db.refresh(ticket)
+            else:
+                current_status = ticket.status
         except Exception:
+            db.rollback()
             current_status = ticket.status
         ticket.current_status = current_status  # type: ignore[attr-defined]
         if not hasattr(ticket, "owner_max_user_id"):
@@ -591,9 +597,19 @@ async def enrich_tickets_status(db: Session, tickets: list[Ticket]) -> list[Tick
     return enriched
 
 
+TERMINAL_TICKET_STATUSES = {"closed", "archived", "deleted"}
+
+
 async def sync_ticket_statuses(db: Session) -> list[TicketStatusNotification]:
     notifications: list[TicketStatusNotification] = []
-    tickets = list(db.scalars(select(Ticket).order_by(Ticket.created_at.desc())).all())
+    # Уже закрытые/архивные заявки не меняют статус — не опрашиваем их повторно.
+    tickets = list(
+        db.scalars(
+            select(Ticket)
+            .where(Ticket.status.notin_(TERMINAL_TICKET_STATUSES))
+            .order_by(Ticket.created_at.desc())
+        ).all()
+    )
     use_extended_api = is_extended_api_enabled(db)
     for ticket in tickets:
         previous_status = ticket.status

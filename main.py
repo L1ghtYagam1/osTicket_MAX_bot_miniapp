@@ -204,12 +204,18 @@ class BackendClient:
     ) -> Any:
         if not self.session:
             raise RuntimeError("Backend session is not initialized")
+        # Бот — доверенный клиент backend и аутентифицируется внутренним токеном.
+        request_headers: dict[str, str] = {}
+        if INTERNAL_API_TOKEN:
+            request_headers["X-Internal-Token"] = INTERNAL_API_TOKEN
+        if headers:
+            request_headers.update(headers)
         async with self.session.request(
             method,
             f"{self.base_url}{path}",
             params=params,
             json=json_body,
-            headers=headers,
+            headers=request_headers or None,
         ) as response:
             text = await response.text()
             if response.status >= 400:
@@ -274,7 +280,8 @@ class BackendClient:
         return await self.request("GET", f"/tickets/{external_id}/status", params={"max_user_id": max_user_id})
 
     async def list_users(self, admin_max_user_id: str) -> list[dict[str, Any]]:
-        return await self.request("GET", "/admin/users", headers={"X-Max-User-Id": admin_max_user_id})
+        # Бот использует внутренний эндпоинт (аутентификация по X-Internal-Token).
+        return await self.request("GET", "/internal/users")
 
     async def sync_status_notifications(self) -> list[dict[str, Any]]:
         if not INTERNAL_API_TOKEN:
@@ -544,7 +551,7 @@ async def handle_description_input(
     if flags.get("ticket_submit_in_progress"):
         await max_client.send_message(
             chat_id,
-            "Р—Р°СЏРІРєР° СѓР¶Рµ РѕС‚РїСЂР°РІР»СЏРµС‚СЃСЏ. РџРѕРґРѕР¶РґРёС‚Рµ РЅРµСЃРєРѕР»СЊРєРѕ СЃРµРєСѓРЅРґ.",
+            "Заявка уже отправляется. Подождите несколько секунд.",
             user_id=user_id,
         )
         return
@@ -828,6 +835,12 @@ async def notifications_loop(
 async def run() -> None:
     if not MAX_BOT_TOKEN:
         raise RuntimeError("Не задан MAX_BOT_TOKEN")
+
+    if not INTERNAL_API_TOKEN:
+        logging.warning(
+            "INTERNAL_API_TOKEN не задан. Backend будет отклонять запросы бота к заявкам "
+            "и пользователям (401/403). Укажите INTERNAL_API_TOKEN в .env."
+        )
 
     load_state()
     touch_heartbeat()
