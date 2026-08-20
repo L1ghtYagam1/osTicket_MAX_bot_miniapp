@@ -239,6 +239,24 @@ function byId(id) {
   return document.getElementById(id);
 }
 
+// Backend отдаёт нормализованный статус (closed, in_progress, ...) — здесь он
+// превращается в человекочитаемую подпись.
+const STATUS_LABELS = {
+  created: "Создана",
+  open: "Открыта",
+  in_progress: "В работе",
+  pending: "Ожидание",
+  resolved: "Решена",
+  closed: "Закрыта",
+  archived: "В архиве",
+  deleted: "Удалена",
+};
+
+function statusLabel(value) {
+  const key = String(value ?? "").trim().toLowerCase();
+  return STATUS_LABELS[key] || key || "неизвестен";
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -607,7 +625,7 @@ async function createTicket() {
       topic_id: topicId,
       description,
     });
-    byId("createSuccessText").textContent = `ID заявки: ${data.external_id}\nСтатус: ${data.current_status}`;
+    byId("createSuccessText").textContent = `ID заявки: ${data.external_id}\nСтатус: ${statusLabel(data.current_status)}`;
     byId("createFormCard").hidden = true;
     byId("createHintCard").hidden = true;
     byId("createSuccessCard").hidden = false;
@@ -951,10 +969,18 @@ async function addTopic() {
 }
 
 async function init() {
-  state.appSettings = await api.getAppSettings();
-  state.appThemeSettings = await api.getAppThemeSettings();
-  state.appUiSettings = await api.getAppUiSettings();
-  state.integrationSettings = await api.getIntegrationSettings();
+  // Настройки не зависят друг от друга — грузим их одним заходом вместо
+  // четырёх последовательных round-trip до backend.
+  const [appSettings, themeSettings, uiSettings, integrationSettings] = await Promise.all([
+    api.getAppSettings(),
+    api.getAppThemeSettings(),
+    api.getAppUiSettings(),
+    api.getIntegrationSettings(),
+  ]);
+  state.appSettings = appSettings;
+  state.appThemeSettings = themeSettings;
+  state.appUiSettings = uiSettings;
+  state.integrationSettings = integrationSettings;
   applyBranding();
   applyThemeSettings();
   applyUiSettings();
@@ -1026,7 +1052,7 @@ function renderTickets(tickets) {
     <div class="list-item ticket-item" onclick="openTicketDetails(decodeURIComponent('${externalIdAttr}'))">
       <div class="list-head">
         <span>#${externalId}</span>
-        <span>${escapeHtml(ticket.current_status)}</span>
+        <span>${escapeHtml(statusLabel(ticket.current_status))}</span>
       </div>
       <div>${escapeHtml(ticket.subject)}</div>
       <div class="ticket-actions">
@@ -1103,7 +1129,7 @@ window.openTicketDetails = async function openTicketDetails(externalId) {
       </div>
       <div class="ticket-meta-card">
         <div class="ticket-meta-label">Статус</div>
-        <div class="ticket-meta-value">${escapeHtml(data.current_status)}</div>
+        <div class="ticket-meta-value">${escapeHtml(statusLabel(data.current_status))}</div>
       </div>
       <div class="ticket-meta-card">
         <div class="ticket-meta-label">Тема</div>

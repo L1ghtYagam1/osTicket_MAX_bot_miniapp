@@ -1,9 +1,12 @@
+import asyncio
+import logging
 import re
 import json
 import secrets
 from datetime import datetime, timedelta, timezone
+from time import monotonic
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -25,9 +28,15 @@ from .models import (
     User,
     UserTicketViewPermission,
 )
-from .osticket import OsTicketClient, extract_extended_thread_entries
+from .osticket import (
+    OsTicketClient,
+    extract_extended_thread_entries,
+    is_terminal_status,
+    normalize_status,
+)
 
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 osticket_client = OsTicketClient()
 
@@ -80,6 +89,13 @@ def bind_user_email(db: Session, max_user_id: str, full_name: str, email: str) -
         raise ValueError("Некорректный email")
 
     validate_allowed_email_domain(email)
+
+    # work_email уникален в БД: без этой проверки повторная привязка чужой почты
+    # выпадала наружу как IntegrityError и превращалась в HTTP 500.
+    email_owner = db.scalar(select(User).where(func.lower(User.work_email) == email.lower()))
+    if email_owner is not None and email_owner.max_user_id != max_user_id:
+        raise ValueError("Эта почта уже привязана к другому аккаунту MAX")
+
     user = db.scalar(select(User).where(User.max_user_id == max_user_id))
     if user is None:
         user = User(
@@ -94,9 +110,50 @@ def bind_user_email(db: Session, max_user_id: str, full_name: str, email: str) -
         user.work_email = email
         user.is_admin = max_user_id in settings.admin_max_ids
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        # Гонка между двумя параллельными подтверждениями одной почты.
+        db.rollback()
+        raise ValueError("Эта почта уже привязана к другому аккаунту MAX") from exc
     db.refresh(user)
     return user
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    """SQLite отдаёт naive datetime — приводим к UTC, чтобы сравнения не падали."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def enforce_email_code_rate_limit(db: Session, max_user_id: str, email: str, now: datetime) -> None:
+    """Не даёт превратить отправку кода в спам-рассыльщик по чужим адресам."""
+    recent = list(
+        db.scalars(
+            select(EmailVerification)
+            .where(EmailVerification.max_user_id == max_user_id)
+            .where(EmailVerification.email == email)
+            .order_by(EmailVerification.created_at.desc())
+            .limit(settings.email_code_max_per_hour)
+        ).all()
+    )
+    if not recent:
+        return
+
+    last_created = _as_utc(recent[0].created_at)
+    if last_created is not None:
+        elapsed = (now - last_created).total_seconds()
+        if elapsed < settings.email_code_resend_interval_seconds:
+            wait_seconds = int(settings.email_code_resend_interval_seconds - elapsed) + 1
+            raise ValueError(f"Новый код можно запросить через {wait_seconds} сек.")
+
+    hour_ago = now - timedelta(hours=1)
+    in_last_hour = sum(1 for item in recent if (_as_utc(item.created_at) or now) >= hour_ago)
+    if in_last_hour >= settings.email_code_max_per_hour:
+        raise ValueError("Слишком много запросов кода. Попробуйте через час.")
 
 
 def request_email_code(db: Session, max_user_id: str, full_name: str, email: str) -> None:
@@ -104,8 +161,9 @@ def request_email_code(db: Session, max_user_id: str, full_name: str, email: str
         raise ValueError("Некорректный email")
 
     validate_allowed_email_domain(email)
-    code = f"{secrets.randbelow(900000) + 100000}"
     now = datetime.now(timezone.utc)
+    enforce_email_code_rate_limit(db, max_user_id, email, now)
+    code = f"{secrets.randbelow(900000) + 100000}"
     expires_at = now + timedelta(minutes=settings.email_verification_ttl_minutes)
     old_codes = list(
         db.scalars(
@@ -132,18 +190,34 @@ def request_email_code(db: Session, max_user_id: str, full_name: str, email: str
 
 def verify_email_code(db: Session, max_user_id: str, full_name: str, email: str, code: str) -> User:
     now = datetime.now(timezone.utc)
+    # Берём последний активный код пользователя, а не «код, совпавший с введённым»:
+    # только так можно посчитать неудачные попытки и оборвать перебор.
     verification = db.scalar(
         select(EmailVerification)
         .where(EmailVerification.max_user_id == max_user_id)
         .where(EmailVerification.email == email)
-        .where(EmailVerification.code == code)
         .where(EmailVerification.consumed_at.is_(None))
         .order_by(EmailVerification.created_at.desc())
     )
     if verification is None:
         raise ValueError("Код не найден или уже использован")
-    if verification.expires_at < now:
+
+    expires_at = _as_utc(verification.expires_at)
+    if expires_at is not None and expires_at < now:
+        verification.consumed_at = now
+        db.commit()
         raise ValueError("Срок действия кода истек")
+
+    if not secrets.compare_digest(str(verification.code), str(code).strip()):
+        verification.attempts = (verification.attempts or 0) + 1
+        attempts_left = settings.email_code_max_attempts - verification.attempts
+        if attempts_left <= 0:
+            # Код сожжён — дальнейший перебор бессмыслен, нужен новый запрос.
+            verification.consumed_at = now
+            db.commit()
+            raise ValueError("Слишком много неверных попыток. Запросите новый код.")
+        db.commit()
+        raise ValueError(f"Неверный код. Осталось попыток: {attempts_left}")
 
     verification.consumed_at = now
     db.commit()
@@ -458,10 +532,7 @@ async def create_ticket(
         .order_by(Ticket.created_at.desc())
     )
     if recent_ticket is not None:
-        recent_ticket.owner_max_user_id = user.max_user_id  # type: ignore[attr-defined]
-        recent_ticket.owner_full_name = user.full_name or user.work_email  # type: ignore[attr-defined]
-        recent_ticket.owner_work_email = user.work_email  # type: ignore[attr-defined]
-        recent_ticket.is_shared = False  # type: ignore[attr-defined]
+        _set_ticket_view_fields(recent_ticket, viewer_user_id=user.id)
         return recent_ticket
 
     external_id = await osticket_client.create_ticket(
@@ -484,12 +555,19 @@ async def create_ticket(
         status="created",
     )
     db.add(ticket)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        # Заявка в osTicket уже создана — её номер обязан попасть в лог, иначе она потеряна.
+        logger.exception(
+            "Заявка %s создана в osTicket, но не сохранена в БД (пользователь %s)",
+            external_id,
+            user.max_user_id,
+        )
+        raise RuntimeError(f"Заявка создана в osTicket (№{external_id}), но не сохранена локально")
     db.refresh(ticket)
-    ticket.owner_max_user_id = user.max_user_id  # type: ignore[attr-defined]
-    ticket.owner_full_name = user.full_name or user.work_email  # type: ignore[attr-defined]
-    ticket.owner_work_email = user.work_email  # type: ignore[attr-defined]
-    ticket.is_shared = False  # type: ignore[attr-defined]
+    _set_ticket_view_fields(ticket, viewer_user_id=user.id)
     return ticket
 
 
@@ -514,10 +592,7 @@ def list_user_tickets(db: Session, max_user_id: str) -> list[Ticket]:
         ).all()
     )
     for ticket in tickets:
-        ticket.owner_max_user_id = ticket.user.max_user_id  # type: ignore[attr-defined]
-        ticket.owner_full_name = ticket.user.full_name or ticket.user.work_email  # type: ignore[attr-defined]
-        ticket.owner_work_email = ticket.user.work_email  # type: ignore[attr-defined]
-        ticket.is_shared = ticket.user_id != user.id  # type: ignore[attr-defined]
+        _set_ticket_view_fields(ticket, viewer_user_id=user.id)
     return tickets
 
 
@@ -551,84 +626,192 @@ async def get_ticket_details(db: Session, max_user_id: str, external_id: str) ->
             extended = await osticket_client.get_extended_ticket_details(ticket.external_id)
             details["subject"] = str(extended.get("subject") or extended.get("title") or details["subject"])
             details["thread"] = extract_extended_thread_entries(extended)
-        except Exception:
-            pass
+        except Exception as exc:
+            # Переписка — необязательная часть карточки: показываем заявку без неё,
+            # но причина должна быть видна в логах, а не проглочена.
+            logger.warning("Не удалось получить переписку по заявке %s: %s", ticket.external_id, exc)
 
     return details
 
 
-async def enrich_ticket_status(db: Session, ticket: Ticket) -> Ticket:
-    if settings.osticket_status_api_url or is_extended_api_enabled(db):
-        try:
-            current_status = await osticket_client.get_ticket_status(
-                ticket.external_id,
-                use_extended_api=is_extended_api_enabled(db),
-            )
-            if current_status and current_status != ticket.status:
-                ticket.status = current_status
-                db.commit()
-                db.refresh(ticket)
-            else:
-                current_status = ticket.status
-        except Exception:
-            db.rollback()
-            current_status = ticket.status
-        ticket.current_status = current_status  # type: ignore[attr-defined]
-        if not hasattr(ticket, "owner_max_user_id"):
-            ticket.owner_max_user_id = ticket.user.max_user_id if ticket.user else ""  # type: ignore[attr-defined]
-            ticket.owner_full_name = (ticket.user.full_name or ticket.user.work_email) if ticket.user else ""  # type: ignore[attr-defined]
-            ticket.owner_work_email = ticket.user.work_email if ticket.user else ""  # type: ignore[attr-defined]
-            ticket.is_shared = False  # type: ignore[attr-defined]
-        return ticket
-
-    ticket.current_status = ticket.status  # type: ignore[attr-defined]
-    if not hasattr(ticket, "owner_max_user_id"):
-        ticket.owner_max_user_id = ticket.user.max_user_id if ticket.user else ""  # type: ignore[attr-defined]
-        ticket.owner_full_name = (ticket.user.full_name or ticket.user.work_email) if ticket.user else ""  # type: ignore[attr-defined]
-        ticket.owner_work_email = ticket.user.work_email if ticket.user else ""  # type: ignore[attr-defined]
+def _set_ticket_view_fields(ticket: Ticket, *, viewer_user_id: int | None = None) -> None:
+    """Проставляет вычисляемые поля, которых нет в таблице, но которые ждёт схема ответа."""
+    owner = ticket.user
+    ticket.owner_max_user_id = owner.max_user_id if owner else ""  # type: ignore[attr-defined]
+    ticket.owner_full_name = (owner.full_name or owner.work_email) if owner else ""  # type: ignore[attr-defined]
+    ticket.owner_work_email = owner.work_email if owner else ""  # type: ignore[attr-defined]
+    if viewer_user_id is not None:
+        ticket.is_shared = ticket.user_id != viewer_user_id  # type: ignore[attr-defined]
+    elif not hasattr(ticket, "is_shared"):
         ticket.is_shared = False  # type: ignore[attr-defined]
-    return ticket
+
+
+# Короткоживущий кэш статусов: список заявок и уведомления обращаются к одним и тем же
+# номерам, а osTicket не меняет статус несколько раз в секунду.
+_status_cache: dict[str, tuple[float, str]] = {}
+
+
+def _cached_status(external_id: str) -> str | None:
+    ttl = settings.ticket_status_cache_ttl_seconds
+    if ttl <= 0:
+        return None
+    entry = _status_cache.get(external_id)
+    if entry is None:
+        return None
+    stored_at, status = entry
+    if monotonic() - stored_at > ttl:
+        _status_cache.pop(external_id, None)
+        return None
+    return status
+
+
+def _store_status(external_id: str, status: str) -> None:
+    if settings.ticket_status_cache_ttl_seconds > 0 and status:
+        _status_cache[external_id] = (monotonic(), status)
+
+
+def invalidate_status_cache(external_id: str | None = None) -> None:
+    if external_id is None:
+        _status_cache.clear()
+    else:
+        _status_cache.pop(external_id, None)
+
+
+def status_source_available(db: Session) -> bool:
+    return bool(settings.osticket_status_api_url or is_extended_api_enabled(db))
+
+
+async def _fetch_status(
+    external_id: str,
+    *,
+    use_extended_api: bool,
+    semaphore: asyncio.Semaphore,
+    use_cache: bool = True,
+) -> str | None:
+    """Возвращает нормализованный статус заявки либо None, если osTicket недоступен."""
+    if use_cache:
+        cached = _cached_status(external_id)
+        if cached is not None:
+            return cached
+
+    async with semaphore:
+        try:
+            raw_status = await osticket_client.get_ticket_status(
+                external_id,
+                use_extended_api=use_extended_api,
+            )
+        except Exception as exc:
+            # Раньше ошибка гасилась молча — статус «залипал», и понять почему было нельзя.
+            logger.warning("Не удалось получить статус заявки %s из osTicket: %s", external_id, exc)
+            return None
+
+    status = normalize_status(raw_status)
+    if status:
+        _store_status(external_id, status)
+    return status or None
+
+
+async def fetch_statuses(
+    tickets: list[Ticket],
+    *,
+    use_extended_api: bool,
+    use_cache: bool = True,
+) -> list[str | None]:
+    """Опрашивает статусы параллельно с ограничением по числу соединений.
+
+    Последовательный обход стоил (число заявок x сетевая задержка) и на десятках
+    заявок гарантированно упирался в таймаут запроса.
+    """
+    if not tickets:
+        return []
+    semaphore = asyncio.Semaphore(max(1, settings.ticket_status_fetch_concurrency))
+    return list(
+        await asyncio.gather(
+            *(
+                _fetch_status(
+                    ticket.external_id,
+                    use_extended_api=use_extended_api,
+                    semaphore=semaphore,
+                    use_cache=use_cache,
+                )
+                for ticket in tickets
+            )
+        )
+    )
 
 
 async def enrich_tickets_status(db: Session, tickets: list[Ticket]) -> list[Ticket]:
-    enriched: list[Ticket] = []
+    if not tickets:
+        return []
+
+    if not status_source_available(db):
+        for ticket in tickets:
+            ticket.current_status = ticket.status  # type: ignore[attr-defined]
+            _set_ticket_view_fields(ticket)
+        return tickets
+
+    use_extended_api = is_extended_api_enabled(db)
+    statuses = await fetch_statuses(tickets, use_extended_api=use_extended_api)
+
+    changed = False
+    for ticket, status in zip(tickets, statuses):
+        if status and status != ticket.status:
+            ticket.status = status
+            changed = True
+
+    if changed:
+        try:
+            db.commit()
+        except Exception:
+            logger.exception("Не удалось сохранить обновлённые статусы заявок")
+            db.rollback()
+
     for ticket in tickets:
-        enriched.append(await enrich_ticket_status(db, ticket))
-    return enriched
+        ticket.current_status = ticket.status  # type: ignore[attr-defined]
+        _set_ticket_view_fields(ticket)
+    return tickets
 
 
-TERMINAL_TICKET_STATUSES = {"closed", "archived", "deleted"}
+async def enrich_ticket_status(db: Session, ticket: Ticket) -> Ticket:
+    enriched = await enrich_tickets_status(db, [ticket])
+    return enriched[0]
 
 
 async def sync_ticket_statuses(db: Session) -> list[TicketStatusNotification]:
-    notifications: list[TicketStatusNotification] = []
-    # Уже закрытые/архивные заявки не меняют статус — не опрашиваем их повторно.
-    tickets = list(
-        db.scalars(
-            select(Ticket)
-            .where(Ticket.status.notin_(TERMINAL_TICKET_STATUSES))
-            .order_by(Ticket.created_at.desc())
-        ).all()
-    )
+    if not status_source_available(db):
+        return []
+
+    # Закрытые и архивные заявки статус больше не меняют — не опрашиваем их повторно.
+    candidates = [
+        ticket
+        for ticket in db.scalars(select(Ticket).order_by(Ticket.created_at.desc())).all()
+        if not is_terminal_status(ticket.status)
+    ]
+    if not candidates:
+        return []
+
     use_extended_api = is_extended_api_enabled(db)
-    for ticket in tickets:
+    # Синхронизация должна видеть свежие данные, а не собственный кэш списка заявок.
+    statuses = await fetch_statuses(candidates, use_extended_api=use_extended_api, use_cache=False)
+
+    notifications: list[TicketStatusNotification] = []
+    for ticket, current_status in zip(candidates, statuses):
         previous_status = ticket.status
-        try:
-            current_status = await osticket_client.get_ticket_status(ticket.external_id, use_extended_api=use_extended_api)
-        except Exception:
-            continue
         if not current_status or current_status == previous_status:
             continue
 
         ticket.status = current_status
         db.add(ticket)
 
-        existing = db.scalar(
+        # Повторный цикл «закрыта -> переоткрыта -> закрыта» должен уведомлять снова,
+        # поэтому подавляем только ещё не отправленный дубликат того же перехода.
+        pending_duplicate = db.scalar(
             select(TicketStatusNotification)
             .where(TicketStatusNotification.ticket_id == ticket.id)
             .where(TicketStatusNotification.new_status == current_status)
+            .where(TicketStatusNotification.notified_at.is_(None))
         )
-        if existing is not None:
+        if pending_duplicate is not None:
             continue
 
         notification = TicketStatusNotification(
@@ -640,7 +823,13 @@ async def sync_ticket_statuses(db: Session) -> list[TicketStatusNotification]:
         db.add(notification)
         notifications.append(notification)
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        logger.exception("Не удалось сохранить результаты синхронизации статусов")
+        db.rollback()
+        return []
+
     for notification in notifications:
         db.refresh(notification)
     return notifications

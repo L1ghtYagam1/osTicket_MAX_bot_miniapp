@@ -1,4 +1,7 @@
+import asyncio
+import contextlib
 import hmac
+import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,12 +11,12 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, s
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from .config import get_settings
-from .database import Base, SessionLocal, engine, get_db
+from .database import SessionLocal, get_db
+from .db_migrate import run_migrations
 from .max_webapp import validate_init_data
 from .models import Category, Hotel, Topic, User
 from .schemas import (
@@ -76,6 +79,7 @@ from .services import (
     list_pending_status_notifications,
     log_admin_action,
     mark_notification_sent,
+    osticket_client,
     request_email_code,
     require_active_user,
     require_admin_user,
@@ -91,18 +95,67 @@ from .services import (
 from .session_auth import SessionPrincipal, create_session_token, verify_session_token
 
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 settings = get_settings()
 WEBAPP_DIR = Path(__file__).resolve().parent.parent / "webapp"
 UPLOADS_DIR = Path(__file__).resolve().parent.parent / "data" / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
+ALLOWED_ICON_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
+ALLOWED_ICON_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+MAX_ICON_SIZE_BYTES = 5 * 1024 * 1024
+
+
+async def status_sync_loop(stop_event: asyncio.Event) -> None:
+    """Держит статусы заявок актуальными в фоне.
+
+    Раньше синхронизацию запускал бот своим HTTP-запросом и ждал её целиком: обход
+    всех незакрытых заявок не укладывался в BACKEND_TIMEOUT и обрывался, так и не
+    доходя до конца списка.
+    """
+    interval = settings.ticket_status_poll_interval_seconds
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
+            return
+        except asyncio.TimeoutError:
+            pass
+
+        try:
+            with SessionLocal() as db:
+                notifications = await sync_ticket_statuses(db)
+            if notifications:
+                logger.info("Синхронизация статусов: новых уведомлений %s", len(notifications))
+        except Exception:
+            logger.exception("Фоновая синхронизация статусов завершилась ошибкой")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    # Схему ведёт Alembic: create_all не умел добавлять колонки в уже существующую базу.
+    run_migrations()
     with SessionLocal() as db:
         init_defaults(db)
-    yield
+
+    stop_event = asyncio.Event()
+    sync_task: asyncio.Task | None = None
+    if settings.ticket_status_poll_interval_seconds > 0:
+        sync_task = asyncio.create_task(status_sync_loop(stop_event))
+
+    try:
+        yield
+    finally:
+        stop_event.set()
+        if sync_task is not None:
+            sync_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await sync_task
+        await osticket_client.close()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -213,17 +266,17 @@ def bind_if_known(db: Session, max_user_id: str):
 
 
 @app.get("/api/v1/health", response_model=HealthOut)
-async def health() -> HealthOut:
+def health() -> HealthOut:
     return HealthOut(status="ok")
 
 
 @app.get("/")
-async def root() -> RedirectResponse:
+def root() -> RedirectResponse:
     return RedirectResponse(url="/app")
 
 
 @app.get("/app")
-async def webapp_index() -> FileResponse:
+def webapp_index() -> FileResponse:
     return FileResponse(
         WEBAPP_DIR / "index.html",
         headers={
@@ -235,18 +288,16 @@ async def webapp_index() -> FileResponse:
 
 
 @app.post("/api/v1/auth/request-email-code", response_model=MessageOut)
-async def request_email_code_endpoint(payload: RequestEmailCodeRequest, db: Session = Depends(get_db)) -> MessageOut:
+def request_email_code_endpoint(payload: RequestEmailCodeRequest, db: Session = Depends(get_db)) -> MessageOut:
     try:
-        await run_in_threadpool(
-            request_email_code, db, payload.max_user_id, payload.full_name, str(payload.email)
-        )
+        request_email_code(db, payload.max_user_id, payload.full_name, str(payload.email))
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return MessageOut(message="Код подтверждения отправлен")
 
 
 @app.post("/api/v1/auth/verify-email-code", response_model=VerifiedUserOut)
-async def verify_email_code_endpoint(payload: VerifyEmailCodeRequest, db: Session = Depends(get_db)) -> VerifiedUserOut:
+def verify_email_code_endpoint(payload: VerifyEmailCodeRequest, db: Session = Depends(get_db)) -> VerifiedUserOut:
     try:
         user = verify_email_code(db, payload.max_user_id, payload.full_name, str(payload.email), payload.code)
     except ValueError as exc:
@@ -259,7 +310,7 @@ async def verify_email_code_endpoint(payload: VerifyEmailCodeRequest, db: Sessio
 
 
 @app.post("/api/v1/auth/webapp-session", response_model=WebAppSessionOut)
-async def webapp_session_endpoint(payload: WebAppSessionRequest) -> WebAppSessionOut:
+def webapp_session_endpoint(payload: WebAppSessionRequest) -> WebAppSessionOut:
     try:
         webapp_user = validate_init_data(payload.init_data, bot_token=settings.max_bot_token)
         access_token = create_session_token(max_user_id=webapp_user.max_user_id, full_name=webapp_user.full_name)
@@ -274,12 +325,12 @@ async def webapp_session_endpoint(payload: WebAppSessionRequest) -> WebAppSessio
 
 
 @app.get("/api/v1/auth/me", response_model=UserOut)
-async def auth_me(current_user: User = Depends(require_current_user)) -> UserOut:
+def auth_me(current_user: User = Depends(require_current_user)) -> UserOut:
     return UserOut.model_validate(current_user)
 
 
 @app.get("/api/v1/users/by-max/{max_user_id}", response_model=UserOut)
-async def get_user_by_max(
+def get_user_by_max(
     max_user_id: str,
     db: Session = Depends(get_db),
     actor: Actor = Depends(require_actor),
@@ -292,7 +343,7 @@ async def get_user_by_max(
 
 
 @app.get("/api/v1/catalog", response_model=CatalogOut)
-async def catalog(db: Session = Depends(get_db)) -> CatalogOut:
+def catalog(db: Session = Depends(get_db)) -> CatalogOut:
     hotels, categories = get_catalog(db)
     return CatalogOut(
         hotels=[HotelOut.model_validate(item) for item in hotels],
@@ -301,22 +352,22 @@ async def catalog(db: Session = Depends(get_db)) -> CatalogOut:
 
 
 @app.get("/api/v1/app-settings", response_model=AppSettingsOut)
-async def app_settings(db: Session = Depends(get_db)) -> AppSettingsOut:
+def app_settings(db: Session = Depends(get_db)) -> AppSettingsOut:
     return AppSettingsOut.model_validate(get_app_settings(db))
 
 
 @app.get("/api/v1/app-theme-settings", response_model=AppThemeSettingsOut)
-async def app_theme_settings(db: Session = Depends(get_db)) -> AppThemeSettingsOut:
+def app_theme_settings(db: Session = Depends(get_db)) -> AppThemeSettingsOut:
     return AppThemeSettingsOut.model_validate(get_app_theme_settings(db))
 
 
 @app.get("/api/v1/app-ui-settings", response_model=AppUiSettingsOut)
-async def app_ui_settings(db: Session = Depends(get_db)) -> AppUiSettingsOut:
+def app_ui_settings(db: Session = Depends(get_db)) -> AppUiSettingsOut:
     return AppUiSettingsOut.model_validate(get_app_ui_settings(db))
 
 
 @app.get("/api/v1/integration-settings", response_model=IntegrationSettingsOut)
-async def integration_settings(db: Session = Depends(get_db)) -> IntegrationSettingsOut:
+def integration_settings(db: Session = Depends(get_db)) -> IntegrationSettingsOut:
     return IntegrationSettingsOut.model_validate(get_integration_settings(db))
 
 
@@ -387,13 +438,13 @@ async def get_ticket_status(
 
 
 @app.get("/api/v1/admin/hotels", response_model=list[HotelOut], dependencies=[Depends(require_admin)])
-async def admin_hotels(db: Session = Depends(get_db)) -> list[HotelOut]:
+def admin_hotels(db: Session = Depends(get_db)) -> list[HotelOut]:
     hotels = list(db.scalars(select(Hotel).order_by(Hotel.name)).all())
     return [HotelOut.model_validate(item) for item in hotels]
 
 
 @app.post("/api/v1/admin/hotels", response_model=HotelOut)
-async def create_hotel(payload: HotelCreateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> HotelOut:
+def create_hotel(payload: HotelCreateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> HotelOut:
     try:
         hotel = create_hotel_record(db, payload.name)
     except ValueError as exc:
@@ -410,7 +461,7 @@ async def create_hotel(payload: HotelCreateRequest, db: Session = Depends(get_db
 
 
 @app.put("/api/v1/admin/hotels/{hotel_id}", response_model=HotelOut)
-async def update_hotel(hotel_id: int, payload: HotelUpdateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> HotelOut:
+def update_hotel(hotel_id: int, payload: HotelUpdateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> HotelOut:
     hotel = db.get(Hotel, hotel_id)
     if hotel is None:
         raise HTTPException(status_code=404, detail="Hotel not found")
@@ -430,7 +481,7 @@ async def update_hotel(hotel_id: int, payload: HotelUpdateRequest, db: Session =
 
 
 @app.get("/api/v1/admin/categories", response_model=list[CategoryOut], dependencies=[Depends(require_admin)])
-async def admin_categories(db: Session = Depends(get_db)) -> list[CategoryOut]:
+def admin_categories(db: Session = Depends(get_db)) -> list[CategoryOut]:
     categories = list(
         db.scalars(
             select(Category)
@@ -442,7 +493,7 @@ async def admin_categories(db: Session = Depends(get_db)) -> list[CategoryOut]:
 
 
 @app.post("/api/v1/admin/categories", response_model=CategoryOut)
-async def create_category(payload: CategoryCreateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> CategoryOut:
+def create_category(payload: CategoryCreateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> CategoryOut:
     try:
         category = create_category_record(db, payload.name, payload.osticket_topic_id)
     except ValueError as exc:
@@ -459,7 +510,7 @@ async def create_category(payload: CategoryCreateRequest, db: Session = Depends(
 
 
 @app.put("/api/v1/admin/categories/{category_id}", response_model=CategoryOut)
-async def update_category(category_id: int, payload: CategoryUpdateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> CategoryOut:
+def update_category(category_id: int, payload: CategoryUpdateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> CategoryOut:
     category = db.get(Category, category_id)
     if category is None:
         raise HTTPException(status_code=404, detail="Category not found")
@@ -481,13 +532,13 @@ async def update_category(category_id: int, payload: CategoryUpdateRequest, db: 
 
 
 @app.get("/api/v1/admin/topics", response_model=list[TopicOut], dependencies=[Depends(require_admin)])
-async def admin_topics(db: Session = Depends(get_db)) -> list[TopicOut]:
+def admin_topics(db: Session = Depends(get_db)) -> list[TopicOut]:
     topics = list(db.scalars(select(Topic).order_by(Topic.name)).all())
     return [TopicOut.model_validate(item) for item in topics]
 
 
 @app.post("/api/v1/admin/topics", response_model=TopicOut)
-async def create_topic(payload: TopicCreateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> TopicOut:
+def create_topic(payload: TopicCreateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> TopicOut:
     try:
         topic = create_topic_record(db, payload.category_id, payload.name)
     except ValueError as exc:
@@ -504,7 +555,7 @@ async def create_topic(payload: TopicCreateRequest, db: Session = Depends(get_db
 
 
 @app.put("/api/v1/admin/topics/{topic_id}", response_model=TopicOut)
-async def update_topic(topic_id: int, payload: TopicUpdateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> TopicOut:
+def update_topic(topic_id: int, payload: TopicUpdateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> TopicOut:
     topic = db.get(Topic, topic_id)
     if topic is None:
         raise HTTPException(status_code=404, detail="Topic not found")
@@ -528,12 +579,12 @@ async def update_topic(topic_id: int, payload: TopicUpdateRequest, db: Session =
 
 
 @app.get("/api/v1/admin/users", response_model=list[UserOut], dependencies=[Depends(require_admin)])
-async def admin_users(db: Session = Depends(get_db)) -> list[UserOut]:
+def admin_users(db: Session = Depends(get_db)) -> list[UserOut]:
     return [UserOut.model_validate(item) for item in list_users(db)]
 
 
 @app.put("/api/v1/admin/users/{user_id}", response_model=UserOut)
-async def admin_update_user(user_id: int, payload: UserUpdateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> UserOut:
+def admin_update_user(user_id: int, payload: UserUpdateRequest, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> UserOut:
     try:
         user = update_user(
             db,
@@ -556,12 +607,12 @@ async def admin_update_user(user_id: int, payload: UserUpdateRequest, db: Sessio
 
 
 @app.get("/api/v1/admin/audit-logs", response_model=list[AdminAuditLogOut], dependencies=[Depends(require_admin)])
-async def admin_audit_logs(db: Session = Depends(get_db)) -> list[AdminAuditLogOut]:
+def admin_audit_logs(db: Session = Depends(get_db)) -> list[AdminAuditLogOut]:
     return [AdminAuditLogOut.model_validate(item) for item in list_audit_logs(db)]
 
 
 @app.put("/api/v1/admin/app-settings", response_model=AppSettingsOut)
-async def admin_update_app_settings(
+def admin_update_app_settings(
     payload: AppSettingsUpdateRequest,
     db: Session = Depends(get_db),
     admin_user: User = Depends(require_admin),
@@ -594,13 +645,15 @@ async def admin_upload_icon(
     file: UploadFile = File(...),
     admin_user: User = Depends(require_admin),
 ) -> UploadedAssetOut:
+    # SVG сознательно не поддерживается: файл отдаётся с того же origin, что и mini app,
+    # а внутри SVG может лежать исполняемый скрипт (хранимая XSS в админке).
     content_type = (file.content_type or "").lower()
-    if content_type not in {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml"}:
-        raise HTTPException(status_code=400, detail="Поддерживаются только PNG, JPG, WEBP и SVG")
+    if content_type not in ALLOWED_ICON_TYPES:
+        raise HTTPException(status_code=400, detail="Поддерживаются только PNG, JPG и WEBP")
 
     original_name = file.filename or "icon"
     extension = Path(original_name).suffix.lower()
-    if extension not in {".png", ".jpg", ".jpeg", ".webp", ".svg"}:
+    if extension not in ALLOWED_ICON_EXTENSIONS:
         extension = ".png"
 
     file_name = f"brand-icon-{uuid4().hex}{extension}"
@@ -608,14 +661,14 @@ async def admin_upload_icon(
     payload = await file.read()
     if not payload:
         raise HTTPException(status_code=400, detail="Файл пустой")
-    if len(payload) > 5 * 1024 * 1024:
+    if len(payload) > MAX_ICON_SIZE_BYTES:
         raise HTTPException(status_code=400, detail="Файл слишком большой. Максимум 5 МБ")
     target_path.write_bytes(payload)
     return UploadedAssetOut(url=f"/uploads/{file_name}", filename=file_name)
 
 
 @app.put("/api/v1/admin/app-theme-settings", response_model=AppThemeSettingsOut)
-async def admin_update_app_theme_settings(
+def admin_update_app_theme_settings(
     payload: AppThemeSettingsUpdateRequest,
     db: Session = Depends(get_db),
     admin_user: User = Depends(require_admin),
@@ -644,7 +697,7 @@ async def admin_update_app_theme_settings(
 
 
 @app.put("/api/v1/admin/app-ui-settings", response_model=AppUiSettingsOut)
-async def admin_update_app_ui_settings(
+def admin_update_app_ui_settings(
     payload: AppUiSettingsUpdateRequest,
     db: Session = Depends(get_db),
     admin_user: User = Depends(require_admin),
@@ -687,7 +740,7 @@ async def admin_update_app_ui_settings(
 
 
 @app.put("/api/v1/admin/integration-settings", response_model=IntegrationSettingsOut)
-async def admin_update_integration_settings(
+def admin_update_integration_settings(
     payload: IntegrationSettingsUpdateRequest,
     db: Session = Depends(get_db),
     admin_user: User = Depends(require_admin),
@@ -712,7 +765,7 @@ async def admin_update_integration_settings(
 
 
 @app.get("/api/v1/admin/users/{user_id}/ticket-access", response_model=list[UserTicketAccessItemOut])
-async def admin_user_ticket_access(user_id: int, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> list[UserTicketAccessItemOut]:
+def admin_user_ticket_access(user_id: int, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)) -> list[UserTicketAccessItemOut]:
     try:
         items = list_ticket_access_items(db, user_id)
     except ValueError as exc:
@@ -721,7 +774,7 @@ async def admin_user_ticket_access(user_id: int, db: Session = Depends(get_db), 
 
 
 @app.put("/api/v1/admin/users/{user_id}/ticket-access", response_model=list[UserTicketAccessItemOut])
-async def admin_update_user_ticket_access(
+def admin_update_user_ticket_access(
     user_id: int,
     payload: UserTicketAccessUpdateRequest,
     db: Session = Depends(get_db),
@@ -743,13 +796,16 @@ async def admin_update_user_ticket_access(
 
 
 @app.get("/api/v1/internal/users", response_model=list[UserOut], dependencies=[Depends(require_internal_token)])
-async def internal_users(db: Session = Depends(get_db)) -> list[UserOut]:
+def internal_users(db: Session = Depends(get_db)) -> list[UserOut]:
     return [UserOut.model_validate(item) for item in list_users(db)]
 
 
 @app.post("/api/v1/internal/ticket-status-sync", response_model=list[TicketStatusNotificationOut], dependencies=[Depends(require_internal_token)])
 async def internal_ticket_status_sync(db: Session = Depends(get_db)) -> list[TicketStatusNotificationOut]:
-    await sync_ticket_statuses(db)
+    # При включённом фоновом цикле бот только забирает готовую очередь и не ждёт
+    # обхода osTicket. Синхронный обход остаётся запасным вариантом, если цикл выключен.
+    if settings.ticket_status_poll_interval_seconds <= 0:
+        await sync_ticket_statuses(db)
     notifications = list_pending_status_notifications(db)
     result: list[TicketStatusNotificationOut] = []
     for item in notifications:
@@ -771,7 +827,7 @@ async def internal_ticket_status_sync(db: Session = Depends(get_db)) -> list[Tic
 
 
 @app.post("/api/v1/internal/ticket-status-notifications/{notification_id}/sent", response_model=MessageOut, dependencies=[Depends(require_internal_token)])
-async def mark_ticket_status_notification_sent(notification_id: int, db: Session = Depends(get_db)) -> MessageOut:
+def mark_ticket_status_notification_sent(notification_id: int, db: Session = Depends(get_db)) -> MessageOut:
     try:
         mark_notification_sent(db, notification_id)
     except ValueError as exc:

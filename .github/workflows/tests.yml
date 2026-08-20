@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Установка зависимостей
+        run: pip install -r requirements-dev.txt
+
+      - name: Тесты
+        run: python -m pytest -q
+
+      - name: Проверка целостности миграций
+        # Схема из моделей и последняя миграция обязаны совпадать, иначе
+        # изменение модели молча не доедет до продовой базы.
+        env:
+          DATABASE_URL: sqlite:///./data/ci.db
+        run: |
+          mkdir -p data
+          python -m alembic upgrade head
+          python -m alembic check

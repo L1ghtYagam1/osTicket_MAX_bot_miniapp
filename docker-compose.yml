@@ -4,13 +4,13 @@ services:
     container_name: max-support-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: maxsupport
-      POSTGRES_USER: maxsupport
-      POSTGRES_PASSWORD: maxsupport
+      POSTGRES_DB: ${POSTGRES_DB:-maxsupport}
+      POSTGRES_USER: ${POSTGRES_USER:-maxsupport}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-maxsupport}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U maxsupport -d maxsupport"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-maxsupport} -d ${POSTGRES_DB:-maxsupport}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -30,6 +30,7 @@ services:
       - ./backend:/app/backend
       - ./webapp:/app/webapp
       - ./data:/app/data
+      - ./alembic.ini:/app/alembic.ini:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
       interval: 30s

@@ -27,10 +27,30 @@ PUBLIC_WEBAPP_URL = os.getenv("PUBLIC_WEBAPP_URL", "").strip()
 INTERNAL_API_TOKEN = os.getenv("INTERNAL_API_TOKEN", "").strip()
 TICKET_STATUS_POLL_INTERVAL_SECONDS = int(os.getenv("TICKET_STATUS_POLL_INTERVAL_SECONDS", "60"))
 ADMIN_IDS = {item.strip() for item in os.getenv("ADMIN_MAX_IDS", "").split(",") if item.strip()}
+RETRY_DELAY_SECONDS = int(os.getenv("BOT_RETRY_DELAY_SECONDS", "5"))
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 STATE_DATA_FILE = DATA_DIR / "conversation_state.json"
 BOT_HEARTBEAT_FILE = DATA_DIR / "bot_heartbeat.json"
+UPDATES_MARKER_FILE = DATA_DIR / "updates_marker.json"
+
+# Подписи статусов дублируются из backend сознательно: бот живёт в отдельном
+# контейнере и не импортирует пакет backend.
+STATUS_LABELS = {
+    "created": "Создана",
+    "open": "Открыта",
+    "in_progress": "В работе",
+    "pending": "Ожидание",
+    "resolved": "Решена",
+    "closed": "Закрыта",
+    "archived": "В архиве",
+    "deleted": "Удалена",
+}
+
+
+def status_label(value: Any) -> str:
+    key = str(value or "").strip().lower()
+    return STATUS_LABELS.get(key, key or "неизвестен")
 
 STATE_IDLE = "idle"
 STATE_WAITING_EMAIL = "waiting_email"
@@ -71,8 +91,15 @@ def load_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
 
 
 def save_json(path: Path, payload: dict[str, Any]) -> None:
+    """Пишет файл атомарно.
+
+    Прямая запись в целевой файл means: обрыв процесса посреди write_text оставлял
+    обрезанный JSON, и при следующем старте состояние всех диалогов терялось.
+    """
     ensure_data_dir()
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp_path, path)
 
 
 def touch_heartbeat() -> None:
@@ -88,6 +115,16 @@ def touch_heartbeat() -> None:
 def load_state() -> None:
     global CONVERSATION_STATE
     CONVERSATION_STATE = load_json(STATE_DATA_FILE, {})
+
+
+def load_updates_marker() -> Optional[str]:
+    marker = load_json(UPDATES_MARKER_FILE, {}).get("marker")
+    return str(marker) if marker else None
+
+
+def save_updates_marker(marker: Optional[str]) -> None:
+    if marker:
+        save_json(UPDATES_MARKER_FILE, {"marker": str(marker)})
 
 
 def save_state() -> None:
@@ -344,7 +381,12 @@ class MaxBotClient:
         if self.marker:
             params["marker"] = self.marker
         response = await self.request("GET", "/updates", params=params)
-        self.marker = response.get("marker", self.marker)
+        # Пустой/отсутствующий marker означает «нового значения нет». Если записать
+        # его как есть, следующий опрос начнётся с начала и все обновления
+        # обработаются повторно — вплоть до дублирующихся заявок.
+        new_marker = response.get("marker")
+        if new_marker:
+            self.marker = str(new_marker)
         return response.get("updates", [])
 
     async def send_message(
@@ -466,7 +508,8 @@ async def show_user_tickets(max_client: MaxBotClient, backend: BackendClient, ch
 
     lines = ["Ваши заявки:"]
     for ticket in tickets:
-        lines.append(f"#{ticket['external_id']} | {ticket.get('current_status') or ticket['status']} | {ticket['subject']}")
+        status = status_label(ticket.get("current_status") or ticket.get("status"))
+        lines.append(f"#{ticket['external_id']} | {status} | {ticket['subject']}")
     await max_client.send_message(chat_id, "\n".join(lines), user_id=user_id)
     await show_main_menu(max_client, chat_id, user_id)
 
@@ -580,7 +623,8 @@ async def handle_description_input(
     buttons = build_buttons([("Новая заявка", make_payload(ACTION_NEW_REQUEST))])
     await max_client.send_message(
         chat_id,
-        f"Заявка отправлена. ID: {ticket['external_id']}. Статус: {ticket.get('current_status') or ticket['status']}",
+        f"Заявка отправлена. ID: {ticket['external_id']}. "
+        f"Статус: {status_label(ticket.get('current_status') or ticket.get('status'))}",
         buttons=buttons,
         user_id=user_id,
     )
@@ -599,7 +643,11 @@ async def handle_status_ticket_input(
         return
     try:
         status_data = await backend.get_ticket_status(user_id, ticket_id)
-        await max_client.send_message(chat_id, f"Статус заявки #{ticket_id}: {status_data['status']}", user_id=user_id)
+        await max_client.send_message(
+            chat_id,
+            f"Статус заявки #{ticket_id}: {status_label(status_data.get('status'))}",
+            user_id=user_id,
+        )
     except Exception as exc:
         await max_client.send_message(chat_id, f"Не удалось получить статус заявки: {exc}", user_id=user_id)
     set_state(user_id, STATE_IDLE)
@@ -781,6 +829,35 @@ async def handle_message(max_client: MaxBotClient, backend: BackendClient, updat
     await show_main_menu(max_client, chat_id, user_id)
 
 
+async def dispatch_updates(
+    max_client: MaxBotClient,
+    backend: BackendClient,
+    updates: list[dict[str, Any]],
+) -> None:
+    """Обрабатывает пачку обновлений: разные пользователи параллельно, один — по порядку.
+
+    Раньше обновления шли строго по одному: медленное создание заявки одного
+    пользователя задерживало всех остальных. Порядок внутри диалога важен (это
+    конечный автомат), поэтому параллелим только между пользователями.
+    """
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for update in updates:
+        user_id, _, _ = extract_sender(update)
+        groups.setdefault(user_id or "", []).append(update)
+
+    async def run_group(items: list[dict[str, Any]]) -> None:
+        for item in items:
+            try:
+                await dispatch_update(max_client, backend, item)
+            except Exception:
+                # Одно битое обновление не должно обрывать обработку пачки:
+                # marker уже сдвинут, повторно эти события не придут.
+                logging.exception("Ошибка при обработке обновления: %s", item)
+            touch_heartbeat()
+
+    await asyncio.gather(*(run_group(items) for items in groups.values()))
+
+
 async def dispatch_update(max_client: MaxBotClient, backend: BackendClient, update: dict[str, Any]) -> None:
     update_type = update.get("update_type") or update.get("type")
     if update_type == "message_callback" or update.get("callback"):
@@ -800,7 +877,8 @@ async def process_status_notifications(max_client: MaxBotClient, backend: Backen
         try:
             message = (
                 f"Статус заявки #{notification['external_id']} изменился:\n"
-                f"{notification['previous_status']} -> {notification['new_status']}\n"
+                f"{status_label(notification['previous_status'])} -> "
+                f"{status_label(notification['new_status'])}\n"
                 f"Тема: {notification['subject']}"
             )
             await max_client.send_message(
@@ -845,6 +923,7 @@ async def run() -> None:
     load_state()
     touch_heartbeat()
     max_client = MaxBotClient(MAX_BOT_TOKEN, MAX_API_BASE_URL)
+    max_client.marker = load_updates_marker()
     backend = BackendClient(BACKEND_API_URL)
     await max_client.start()
     await backend.start()
@@ -856,12 +935,14 @@ async def run() -> None:
             try:
                 updates = await max_client.get_updates()
                 touch_heartbeat()
-                for update in updates:
-                    await dispatch_update(max_client, backend, update)
-                    touch_heartbeat()
+                if updates:
+                    await dispatch_updates(max_client, backend, updates)
+                save_updates_marker(max_client.marker)
             except Exception:
                 logging.exception("Ошибка в цикле обработки обновлений")
                 touch_heartbeat()
+                # Пауза, чтобы недоступный MAX API не превращался в busy-loop.
+                await asyncio.sleep(RETRY_DELAY_SECONDS)
     finally:
         stop_event.set()
         notifications_task.cancel()

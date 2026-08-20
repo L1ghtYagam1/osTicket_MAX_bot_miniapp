@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import re
 from typing import Any
 
@@ -8,7 +9,12 @@ import aiohttp
 from .config import get_settings
 
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# Ограничение на одновременные соединения к osTicket, чтобы массовый опрос статусов
+# не превращался в мини-DDoS собственного helpdesk.
+OSTICKET_CONNECTION_LIMIT = 10
 
 EXTENDED_STATUS_NAMES = {
     1: "open",
@@ -20,8 +26,107 @@ EXTENDED_STATUS_NAMES = {
     7: "pending",
 }
 
+# Канонические статусы, которыми оперирует backend. Всё, что приходит из osTicket,
+# приводится к ним, иначе сравнения вроде "заявка закрыта" ломаются на регистре
+# и локализации ("Closed", "closed", "Закрыта" — это один и тот же статус).
+STATUS_ALIASES = {
+    "created": "created",
+    "создана": "created",
+    "новая": "open",
+    "new": "open",
+    "open": "open",
+    "opened": "open",
+    "reopened": "open",
+    "открыта": "open",
+    "открыт": "open",
+    "in progress": "in_progress",
+    "in_progress": "in_progress",
+    "inprogress": "in_progress",
+    "processing": "in_progress",
+    "в работе": "in_progress",
+    "pending": "pending",
+    "on hold": "pending",
+    "onhold": "pending",
+    "hold": "pending",
+    "waiting": "pending",
+    "ожидание": "pending",
+    "resolved": "resolved",
+    "solved": "resolved",
+    "решена": "resolved",
+    "решён": "resolved",
+    "решен": "resolved",
+    "closed": "closed",
+    "close": "closed",
+    "completed": "closed",
+    "complete": "closed",
+    "закрыта": "closed",
+    "закрыт": "closed",
+    "archived": "archived",
+    "archive": "archived",
+    "архив": "archived",
+    "deleted": "deleted",
+    "удалена": "deleted",
+    "удалён": "deleted",
+    "удален": "deleted",
+}
 
-def extract_ticket_id(response_text: str, response_headers: dict[str, str]) -> str:
+# Статусы, после которых заявка уже не меняется — их не нужно переспрашивать у osTicket.
+TERMINAL_STATUSES = frozenset({"closed", "archived", "deleted"})
+
+STATUS_LABELS = {
+    "created": "Создана",
+    "open": "Открыта",
+    "in_progress": "В работе",
+    "pending": "Ожидание",
+    "resolved": "Решена",
+    "closed": "Закрыта",
+    "archived": "В архиве",
+    "deleted": "Удалена",
+}
+
+
+def normalize_status(value: Any) -> str:
+    """Приводит статус из любого формата osTicket к каноническому виду."""
+    if value is None:
+        return ""
+
+    if isinstance(value, bool):
+        return "closed" if value else "open"
+
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return EXTENDED_STATUS_NAMES.get(int(value), str(int(value)))
+
+    text = str(value).strip()
+    if not text:
+        return ""
+
+    # Числовой status_id, пришедший строкой.
+    if text.isdigit():
+        return EXTENDED_STATUS_NAMES.get(int(text), text)
+
+    key = re.sub(r"[\s\-]+", " ", text.lower()).strip()
+    if key in STATUS_ALIASES:
+        return STATUS_ALIASES[key]
+    return key.replace(" ", "_")
+
+
+def status_label(value: str) -> str:
+    """Человекочитаемое название статуса для бота и mini app."""
+    normalized = normalize_status(value)
+    return STATUS_LABELS.get(normalized, normalized or "неизвестен")
+
+
+def is_terminal_status(value: str) -> bool:
+    return normalize_status(value) in TERMINAL_STATUSES
+
+
+def extract_ticket_id(response_text: str, response_headers: dict[str, str]) -> str | None:
+    """Возвращает номер заявки из ответа osTicket либо None.
+
+    Раньше здесь возвращалась строка-заглушка, которая затем писалась в уникальное
+    поле tickets.external_id — вторая такая заявка падала с IntegrityError, а тикет
+    в osTicket оставался «сиротой». Теперь неудача разбора видна вызывающему коду.
+    """
     location_header = response_headers.get("Location", "")
     try:
         response_json: Any = json.loads(response_text) if response_text else {}
@@ -52,7 +157,7 @@ def extract_ticket_id(response_text: str, response_headers: dict[str, str]) -> s
         if match:
             return match.group(0)
 
-    return "не указан"
+    return None
 
 
 def extract_status(body: str) -> str:
@@ -63,11 +168,11 @@ def extract_status(body: str) -> str:
 
     status = extract_status_from_payload(payload)
     if status:
-        return status
+        return normalize_status(status)
 
     match = re.search(r'"(?:status|state|ticket_status|ticketState)"\s*:\s*"([^"]+)"', body, re.IGNORECASE)
     if match:
-        return match.group(1)
+        return normalize_status(match.group(1))
 
     raise RuntimeError("Ticket status not found in osTicket response")
 
@@ -229,17 +334,18 @@ def _extract_text_value(value: Any) -> str:
 def normalize_extended_status(ticket_payload: dict[str, Any]) -> str:
     for key in ("status", "state", "ticket_status", "ticketState"):
         value = ticket_payload.get(key)
+        if isinstance(value, dict):
+            value = value.get("name") or value.get("title") or value.get("id")
         if isinstance(value, str) and value.strip():
-            return value.strip().lower()
+            return normalize_status(value)
 
     for key in ("status_id", "statusId"):
         value = ticket_payload.get(key)
         try:
             status_id = int(value)
         except (TypeError, ValueError):
-            status_id = None
-        if status_id is not None:
-            return EXTENDED_STATUS_NAMES.get(status_id, str(status_id))
+            continue
+        return EXTENDED_STATUS_NAMES.get(status_id, str(status_id))
 
     for key in ("closed", "is_closed"):
         value = ticket_payload.get(key)
@@ -250,8 +356,38 @@ def normalize_extended_status(ticket_payload: dict[str, Any]) -> str:
 
 
 class OsTicketClient:
+    """Клиент osTicket с одной переиспользуемой HTTP-сессией.
+
+    Раньше на каждый вызов создавался новый aiohttp.ClientSession: пул соединений и
+    TLS-handshake заново, что при опросе статусов десятков заявок стоило дороже
+    самих запросов.
+    """
+
     def __init__(self) -> None:
         self.timeout = aiohttp.ClientTimeout(total=settings.osticket_request_timeout)
+        self._session: aiohttp.ClientSession | None = None
+        self._session_lock = asyncio.Lock()
+
+    async def session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            async with self._session_lock:
+                if self._session is None or self._session.closed:
+                    self._session = aiohttp.ClientSession(
+                        timeout=self.timeout,
+                        connector=aiohttp.TCPConnector(limit=OSTICKET_CONNECTION_LIMIT),
+                    )
+        return self._session
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+        self._session = None
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "X-API-Key": settings.osticket_api_key,
+            "Content-Type": "application/json",
+        }
 
     async def create_ticket(
         self,
@@ -278,20 +414,22 @@ class OsTicketClient:
             "message": f"Отель: {hotel_name}\nОписание заявки:\n{description}",
             "topicId": osticket_topic_id,
         }
-        headers = {
-            "X-API-Key": settings.osticket_api_key,
-            "Content-Type": "application/json",
-        }
 
         try:
-            async with aiohttp.ClientSession(timeout=self.timeout) as session:
-                async with session.post(settings.osticket_api_url, headers=headers, json=payload) as response:
-                    body = await response.text()
-                    if response.status != 201:
-                        raise RuntimeError(f"osTicket error {response.status}: {body}")
-                    return extract_ticket_id(body, dict(response.headers))
+            session = await self.session()
+            async with session.post(settings.osticket_api_url, headers=self._headers(), json=payload) as response:
+                body = await response.text()
+                if response.status != 201:
+                    raise RuntimeError(f"osTicket error {response.status}: {body}")
+                ticket_id = extract_ticket_id(body, dict(response.headers))
         except asyncio.TimeoutError as exc:
             raise RuntimeError("Timeout while connecting to osTicket") from exc
+
+        if not ticket_id:
+            # Тикет мог создаться, но номер не разобрался — писать заглушку в БД нельзя.
+            logger.error("osTicket не вернул номер заявки. Ответ: %s", body[:500])
+            raise RuntimeError("osTicket не вернул номер заявки")
+        return ticket_id
 
     async def get_ticket_status(self, external_ticket_id: str, *, use_extended_api: bool = False) -> str:
         if use_extended_api and settings.osticket_extended_api_url:
@@ -304,18 +442,14 @@ class OsTicketClient:
             raise RuntimeError("OSTICKET_API_KEY is not configured")
 
         url = settings.osticket_status_api_url.format(ticket_id=external_ticket_id)
-        headers = {
-            "X-API-Key": settings.osticket_api_key,
-            "Content-Type": "application/json",
-        }
 
         try:
-            async with aiohttp.ClientSession(timeout=self.timeout) as session:
-                async with session.get(url, headers=headers) as response:
-                    body = await response.text()
-                    if response.status >= 400:
-                        raise RuntimeError(f"osTicket status error {response.status}: {body}")
-                    return extract_status(body)
+            session = await self.session()
+            async with session.get(url, headers=self._headers()) as response:
+                body = await response.text()
+                if response.status >= 400:
+                    raise RuntimeError(f"osTicket status error {response.status}: {body}")
+                return extract_status(body)
         except asyncio.TimeoutError as exc:
             raise RuntimeError("Timeout while reading ticket status from osTicket") from exc
 
@@ -424,27 +558,23 @@ class OsTicketClient:
 
         base_url = settings.osticket_extended_api_url.rstrip("/")
         url = f"{base_url}{path}"
-        headers = {
-            "X-API-Key": settings.osticket_api_key,
-            "apikey": settings.osticket_api_key,
-            "Content-Type": "application/json",
-        }
+        headers = {**self._headers(), "apikey": settings.osticket_api_key}
 
         try:
-            async with aiohttp.ClientSession(timeout=self.timeout) as session:
-                async with session.request(method, url, headers=headers, json=payload, params=params) as response:
-                    body = await response.text()
-                    if response.status >= 400:
-                        raise RuntimeError(f"Extended osTicket API error {response.status}: {body}")
-                    if not body:
-                        return {}
-                    try:
-                        data = json.loads(body)
-                    except json.JSONDecodeError as exc:
-                        raise RuntimeError(f"Extended osTicket API returned invalid JSON: {body}") from exc
-                    if isinstance(data, dict) and data.get("success") is False:
-                        raise RuntimeError(data.get("message") or "Extended osTicket API request failed")
-                    return data if isinstance(data, dict) else {"data": data}
+            session = await self.session()
+            async with session.request(method, url, headers=headers, json=payload, params=params) as response:
+                body = await response.text()
+                if response.status >= 400:
+                    raise RuntimeError(f"Extended osTicket API error {response.status}: {body}")
+                if not body:
+                    return {}
+                try:
+                    data = json.loads(body)
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError(f"Extended osTicket API returned invalid JSON: {body}") from exc
+                if isinstance(data, dict) and data.get("success") is False:
+                    raise RuntimeError(data.get("message") or "Extended osTicket API request failed")
+                return data if isinstance(data, dict) else {"data": data}
         except asyncio.TimeoutError as exc:
             raise RuntimeError("Timeout while calling extended osTicket API") from exc
 

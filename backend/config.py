@@ -38,11 +38,19 @@ class Settings(BaseSettings):
     osticket_extended_api_topic_id: int = 1
     osticket_extended_api_username: str = ""
     email_verification_ttl_minutes: int = 10
+    # Защита кода подтверждения от перебора и от использования сервиса как спам-рассыльщика.
+    email_code_max_attempts: int = 5
+    email_code_resend_interval_seconds: int = 60
+    email_code_max_per_hour: int = 5
     max_webapp_auth_max_age_seconds: int = 86400
     max_session_ttl_seconds: int = 0
     internal_api_token: str = ""
     ticket_status_poll_interval_seconds: int = 60
     ticket_dedup_seconds: int = 30
+    # Опрос статусов в osTicket: сколько заявок тянем одновременно и как долго
+    # переиспользуем уже полученный статус, не дёргая helpdesk повторно.
+    ticket_status_fetch_concurrency: int = 8
+    ticket_status_cache_ttl_seconds: int = 30
 
     smtp_host: str = ""
     smtp_port: int = 587

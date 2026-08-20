@@ -157,6 +157,7 @@ class EmailVerification(Base, TimestampMixin):
     code: Mapped[str] = mapped_column(String(16))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class AdminAuditLog(Base, TimestampMixin):
@@ -174,7 +175,6 @@ class AdminAuditLog(Base, TimestampMixin):
 
 class TicketStatusNotification(Base, TimestampMixin):
     __tablename__ = "ticket_status_notifications"
-    __table_args__ = (UniqueConstraint("ticket_id", "new_status", name="uq_ticket_status_notification"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)

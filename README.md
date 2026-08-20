@@ -59,13 +59,17 @@ Admin Panel
 ## Структура проекта
 
 ```text
-backend/         FastAPI backend
-webapp/          web UI / mini app
-main.py          MAX bot
+backend/             FastAPI backend
+backend/migrations/  миграции Alembic
+webapp/              web UI / mini app
+tests/               pytest
+main.py              MAX bot
+alembic.ini
 docker-compose.yml
 Dockerfile.backend
 Dockerfile.bot
 requirements.txt
+requirements-dev.txt
 ```
 
 ## Требования
@@ -92,7 +96,7 @@ requirements.txt
 OSTICKET_STATUS_API_URL=https://help.example.com/api/tickets/{ticket_id}.json
 ```
 
-Если ваша установка osTicket возвращает другой JSON, возможно потребуется адаптировать парсер в [backend/osticket.py](/C:/Users/132/Desktop/bot/backend/osticket.py).
+Если ваша установка osTicket возвращает другой JSON, возможно потребуется адаптировать парсер в [backend/osticket.py](backend/osticket.py).
 
 ## Настройка `.env`
 
@@ -319,7 +323,7 @@ OSTICKET_API_URL=https://osticket.ukprovence.ru/api/tickets.json
 OSTICKET_STATUS_API_URL=https://osticket.ukprovence.ru/api/tickets/{ticket_id}.json
 ```
 
-Проект уже подготовлен под Caddy. Рабочий конфиг лежит в [deploy/Caddyfile](/C:/Users/132/Desktop/bot/deploy/Caddyfile).
+Проект уже подготовлен под Caddy. Рабочий конфиг лежит в [deploy/Caddyfile](deploy/Caddyfile).
 
 Как это работает:
 
@@ -407,7 +411,7 @@ python scripts/backup_db.py
 
 1. Проверьте `OSTICKET_STATUS_API_URL`
 2. Проверьте raw-ответ вашего osTicket
-3. При необходимости адаптируйте разбор в [backend/osticket.py](/C:/Users/132/Desktop/bot/backend/osticket.py)
+3. При необходимости адаптируйте разбор в [backend/osticket.py](backend/osticket.py)
 
 ## Подключение mini app в MAX
 
@@ -478,7 +482,7 @@ X-Internal-Token: <INTERNAL_API_TOKEN>
 
 В `docker-compose.yml` уже добавлен сервис `postgres`.
 
-Рекомендуемая production-конфигурация лежит в файле [\.env.production.example](/C:/Users/132/Desktop/bot/.env.production.example).
+Рекомендуемая production-конфигурация лежит в файле [.env.production.example](.env.production.example).
 
 Ключевая строка подключения:
 
@@ -501,21 +505,78 @@ DATABASE_URL=postgresql+psycopg://maxsupport:maxsupport@postgres:5432/maxsupport
 TICKET_STATUS_POLL_INTERVAL_SECONDS=60
 ```
 
+## Схема базы данных и миграции
+
+Схему ведёт Alembic. Backend применяет миграции сам при старте, поэтому обновление
+сводится к обычному:
+
+```bash
+git pull
+docker-compose up -d --build || docker compose up -d --build
+```
+
+Что происходит при запуске:
+
+- пустая база — прогоняются все миграции с нуля;
+- база, созданная прежней версией через `create_all` — состояние определяется
+  автоматически, штампуется базовая ревизия и накатывается только разница;
+- база уже под Alembic — обычный `upgrade head`.
+
+Ручные команды, если нужны:
+
+```bash
+docker compose exec backend python -m alembic current
+docker compose exec backend python -m alembic upgrade head
+docker compose exec backend python -m alembic downgrade -1
+```
+
+После изменения моделей в `backend/models.py` создайте миграцию:
+
+```bash
+python -m alembic revision --autogenerate -m "описание изменения"
+```
+
+## Тесты
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+Покрыты: разбор ответов osTicket и нормализация статусов, подтверждение почты
+(домены, троттлинг, лимит попыток), создание и дедупликация заявок, права на
+просмотр чужих заявок, синхронизация статусов, подпись сессий и `initData`,
+разграничение доступа в API, а также разбор обновлений и маркер long-polling бота.
+
+Тесты не ходят в сеть: клиент osTicket и SMTP подменяются, база — временный SQLite.
+
+## Статусы заявок
+
+Статусы из osTicket приводятся к единому набору независимо от регистра и языка
+исходного значения (`Closed`, `closed`, `Закрыта` — это один статус `closed`):
+
+`created`, `open`, `in_progress`, `pending`, `resolved`, `closed`, `archived`, `deleted`
+
+Заявки в статусах `closed`, `archived` и `deleted` повторно не опрашиваются.
+Синхронизацию выполняет сам backend в фоне с интервалом
+`TICKET_STATUS_POLL_INTERVAL_SECONDS`; бот только забирает готовую очередь
+уведомлений. Значение `0` отключает фоновый цикл и возвращает прежнее поведение,
+когда обход osTicket запускается по запросу бота.
+
 ## Ограничения текущей версии
 
 - статусы зависят от доступности `OSTICKET_STATUS_API_URL`
 - вложения в заявки пока не реализованы
-- ответы/переписка по тикету пока не реализованы в UI
-- админ-аутентификация пока базовая
+- отправка ответа по тикету из UI пока не реализована (переписка только отображается)
+- админ-панель использует системные `prompt()` вместо форм
 - mini app integration с реальными launch-данными MAX ещё нужно донастроить на стороне платформы
 
 ## Что можно улучшать дальше
 
 - вложения
-- ответы в карточке заявки
-- аудит действий администратора
-- более строгую авторизацию админов
-- синхронизацию статусов и событий из osTicket
+- отправку ответа из карточки заявки
+- нормальные формы вместо `prompt()` в админ-панели
+- переход на асинхронный драйвер БД
 - адаптер под будущий osTicket `2.0`
 
 ## Источники
