@@ -738,6 +738,10 @@ async def handle_attachments_message(
         )
         return
 
+    # Скачивание/кодирование файла занимает время — сразу подтверждаем приём,
+    # чтобы бот не выглядел зависшим.
+    await max_client.send_message(chat_id, "⏳ Загружаю файлы, подождите…", user_id=user_id)
+
     added = 0
     errors: list[str] = []
     for index, attachment in enumerate(raw_attachments, start=len(attachments) + 1):
@@ -812,6 +816,10 @@ async def submit_ticket(
     attachments = form.get("attachments", [])
     flags["ticket_submit_in_progress"] = True
     save_state()
+    # Отправка заявки с вложениями в osTicket может занять несколько секунд —
+    # сразу сообщаем пользователю, что идёт отправка.
+    progress = "⏳ Отправляю заявку…" + (" Загружаю файлы, это может занять время." if attachments else "")
+    await max_client.send_message(chat_id, progress, user_id=user_id)
     try:
         ticket = await backend.create_ticket(
             max_user_id=user_id,
