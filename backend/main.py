@@ -386,6 +386,7 @@ async def create_ticket_endpoint(
             category_id=payload.category_id,
             topic_id=payload.topic_id,
             description=payload.description,
+            attachments=payload.attachments,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

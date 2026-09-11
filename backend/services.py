@@ -1,9 +1,12 @@
 import asyncio
+import base64
+import binascii
 import logging
 import re
 import json
 import secrets
 from datetime import datetime, timedelta, timezone
+from pathlib import PurePosixPath
 from time import monotonic
 
 from sqlalchemy import func, select
@@ -39,6 +42,90 @@ from .osticket import (
 logger = logging.getLogger(__name__)
 settings = get_settings()
 osticket_client = OsTicketClient()
+
+# Блокировки на пользователя защищают создание заявки от гонки: при быстрых
+# повторных нажатиях несколько запросов иначе проходят проверку дедупликации
+# одновременно (первый тикет ещё не закоммичен) и создают дубли в osTicket.
+_ticket_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_ticket_lock(max_user_id: str) -> asyncio.Lock:
+    lock = _ticket_locks.get(max_user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _ticket_locks[max_user_id] = lock
+    return lock
+
+
+_ATTACHMENT_EXTENSION_MIME = {
+    "pdf": "application/pdf",
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "txt": "text/plain",
+    "csv": "text/csv",
+    "doc": "application/msword",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xls": "application/vnd.ms-excel",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "zip": "application/zip",
+}
+
+
+def _attachment_extension(filename: str) -> str:
+    return PurePosixPath(filename).suffix.lower().lstrip(".")
+
+
+def validate_and_prepare_attachments(raw_attachments: list | None) -> list[dict[str, str]]:
+    """Проверяет вложения и готовит их для передачи в osTicket.
+
+    На входе — список dict/Pydantic-моделей с полями filename, content_type,
+    data_base64. Возвращает нормализованный список {name, mime, data_base64}.
+    Ошибки валидации поднимаются как ValueError с понятным текстом.
+    """
+    if not raw_attachments:
+        return []
+
+    max_count = settings.attachment_max_count
+    if len(raw_attachments) > max_count:
+        raise ValueError(f"Слишком много файлов. Максимум {max_count}")
+
+    allowed_extensions = settings.attachment_allowed_extensions
+    max_bytes = settings.attachment_max_file_size_bytes
+    prepared: list[dict[str, str]] = []
+
+    for item in raw_attachments:
+        filename = str(getattr(item, "filename", None) or (item.get("filename") if isinstance(item, dict) else "")).strip()
+        content_type = str(getattr(item, "content_type", None) or (item.get("content_type") if isinstance(item, dict) else "")).strip()
+        data_base64 = str(getattr(item, "data_base64", None) or (item.get("data_base64") if isinstance(item, dict) else "")).strip()
+
+        if not filename:
+            raise ValueError("У файла отсутствует имя")
+        if not data_base64:
+            raise ValueError(f"Файл «{filename}» пустой")
+
+        extension = _attachment_extension(filename)
+        if allowed_extensions and extension not in allowed_extensions:
+            allowed_list = ", ".join(allowed_extensions)
+            raise ValueError(f"Тип файла «{extension or '?'}» не разрешён. Разрешены: {allowed_list}")
+
+        try:
+            decoded = base64.b64decode(data_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError(f"Не удалось прочитать файл «{filename}»") from exc
+        if not decoded:
+            raise ValueError(f"Файл «{filename}» пустой")
+        if max_bytes and len(decoded) > max_bytes:
+            raise ValueError(
+                f"Файл «{filename}» слишком большой. Максимум {settings.attachment_max_file_size_mb} МБ"
+            )
+
+        mime = content_type or _ATTACHMENT_EXTENSION_MIME.get(extension, "application/octet-stream")
+        prepared.append({"name": filename, "mime": mime, "data_base64": data_base64})
+
+    return prepared
 
 
 def init_defaults(db: Session) -> None:
@@ -503,6 +590,33 @@ async def create_ticket(
     category_id: int,
     topic_id: int,
     description: str,
+    attachments: list | None = None,
+) -> Ticket:
+    # Валидацию вложений делаем до блокировки (быстрая, без побочных эффектов).
+    prepared_attachments = validate_and_prepare_attachments(attachments)
+    # Сериализуем создание заявок одного пользователя, иначе повторные нажатия
+    # проходят дедупликацию одновременно и создают дубли в osTicket.
+    async with _get_ticket_lock(str(max_user_id)):
+        return await _create_ticket_locked(
+            db,
+            max_user_id=max_user_id,
+            hotel_id=hotel_id,
+            category_id=category_id,
+            topic_id=topic_id,
+            description=description,
+            prepared_attachments=prepared_attachments,
+        )
+
+
+async def _create_ticket_locked(
+    db: Session,
+    *,
+    max_user_id: str,
+    hotel_id: int,
+    category_id: int,
+    topic_id: int,
+    description: str,
+    prepared_attachments: list[dict[str, str]],
 ) -> Ticket:
     user = require_active_user(db, max_user_id)
 
@@ -542,6 +656,7 @@ async def create_ticket(
         description=description,
         hotel_name=hotel.name,
         osticket_topic_id=category.osticket_topic_id,
+        attachments=prepared_attachments,
     )
 
     ticket = Ticket(

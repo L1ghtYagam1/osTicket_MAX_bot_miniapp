@@ -209,12 +209,19 @@ class CatalogOut(BaseModel):
     categories: list[CategoryOut]
 
 
+class TicketAttachmentIn(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(default="", max_length=255)
+    data_base64: str = Field(min_length=1)
+
+
 class TicketCreateRequest(BaseModel):
     max_user_id: str
     hotel_id: int
     category_id: int
     topic_id: int
     description: str = Field(min_length=1, max_length=10000)
+    attachments: list[TicketAttachmentIn] = Field(default_factory=list)
 
 
 class TicketOut(BaseModel):

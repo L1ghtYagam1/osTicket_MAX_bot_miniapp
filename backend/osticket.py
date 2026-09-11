@@ -398,11 +398,17 @@ class OsTicketClient:
         description: str,
         hotel_name: str,
         osticket_topic_id: int,
+        attachments: list[dict[str, str]] | None = None,
     ) -> str:
         if not settings.osticket_api_url:
             raise RuntimeError("OSTICKET_API_URL is not configured")
         if not settings.osticket_api_key:
             raise RuntimeError("OSTICKET_API_KEY is not configured")
+
+        message = f"Отель: {hotel_name}\nОписание заявки:\n{description}"
+        if attachments:
+            attached_names = ", ".join(item["name"] for item in attachments)
+            message += f"\n\nПриложенные файлы: {attached_names}"
 
         payload = {
             "alert": True,
@@ -411,9 +417,16 @@ class OsTicketClient:
             "name": full_name,
             "email": email,
             "subject": subject,
-            "message": f"Отель: {hotel_name}\nОписание заявки:\n{description}",
+            "message": message,
             "topicId": osticket_topic_id,
         }
+        # osTicket принимает вложения массивом объектов {имя: data-URI} (RFC 2397).
+        # Добавляем только при наличии файлов, чтобы не менять поведение без них.
+        if attachments:
+            payload["attachments"] = [
+                {item["name"]: f"data:{item['mime']};base64,{item['data_base64']}"}
+                for item in attachments
+            ]
 
         try:
             session = await self.session()

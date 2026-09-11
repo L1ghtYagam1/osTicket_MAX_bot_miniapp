@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     ticket_status_fetch_concurrency: int = 8
     ticket_status_cache_ttl_seconds: int = 30
 
+    # Вложения к заявкам (mini app и бот). Лимиты дублируются на клиенте.
+    attachment_max_count: int = 5
+    attachment_max_file_size_mb: int = 10
+    attachment_allowed_extensions_raw: str = Field(
+        default="pdf,png,jpg,jpeg,gif,webp,txt,doc,docx,xls,xlsx,csv,zip",
+        alias="ATTACHMENT_ALLOWED_EXTENSIONS",
+    )
+
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""
@@ -83,6 +91,17 @@ class Settings(BaseSettings):
         if not raw:
             return []
         return [item.strip() for item in raw.split(",") if item.strip()]
+
+    @property
+    def attachment_allowed_extensions(self) -> List[str]:
+        raw = getattr(self, "attachment_allowed_extensions_raw", "").strip()
+        if not raw:
+            return []
+        return [item.strip().lower().lstrip(".") for item in raw.split(",") if item.strip()]
+
+    @property
+    def attachment_max_file_size_bytes(self) -> int:
+        return max(0, self.attachment_max_file_size_mb) * 1024 * 1024
 
 
 @lru_cache

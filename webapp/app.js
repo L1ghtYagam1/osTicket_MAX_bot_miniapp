@@ -589,6 +589,111 @@ function resetCreateFormVisibility() {
   byId("createResult").textContent = "";
 }
 
+// Лимиты вложений дублируют дефолты backend (backend/config.py) — это только UX,
+// финальная проверка всё равно на сервере.
+const ATTACHMENT_MAX_COUNT = 5;
+const ATTACHMENT_MAX_SIZE_MB = 10;
+const ATTACHMENT_ALLOWED_EXTENSIONS = [
+  "pdf", "png", "jpg", "jpeg", "gif", "webp",
+  "txt", "doc", "docx", "xls", "xlsx", "csv", "zip",
+];
+
+let selectedAttachments = [];
+
+function formatBytes(bytes) {
+  if (!bytes) return "0 Б";
+  const units = ["Б", "КБ", "МБ", "ГБ"];
+  const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  const value = bytes / 1024 ** index;
+  return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function fileExtension(name) {
+  const dot = name.lastIndexOf(".");
+  return dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
+}
+
+function renderAttachmentList() {
+  const root = byId("attachmentList");
+  if (!root) return;
+  if (!selectedAttachments.length) {
+    root.innerHTML = "";
+    return;
+  }
+  root.innerHTML = selectedAttachments
+    .map(
+      (item, index) => `
+      <div class="attachment-item">
+        <span class="attachment-name">${escapeHtml(item.file.name)}</span>
+        <span class="attachment-size">${formatBytes(item.file.size)}</span>
+        <button type="button" class="attachment-remove" data-index="${index}" aria-label="Удалить">×</button>
+      </div>`
+    )
+    .join("");
+  root.querySelectorAll(".attachment-remove").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number(button.dataset.index);
+      selectedAttachments.splice(index, 1);
+      renderAttachmentList();
+    });
+  });
+}
+
+function handleAttachmentChange(event) {
+  const result = byId("createResult");
+  const files = Array.from(event.target.files || []);
+  for (const file of files) {
+    if (selectedAttachments.length >= ATTACHMENT_MAX_COUNT) {
+      result.textContent = `Можно приложить не более ${ATTACHMENT_MAX_COUNT} файлов.`;
+      break;
+    }
+    const extension = fileExtension(file.name);
+    if (!ATTACHMENT_ALLOWED_EXTENSIONS.includes(extension)) {
+      result.textContent = `Тип файла «${extension || "?"}» не поддерживается.`;
+      continue;
+    }
+    if (file.size > ATTACHMENT_MAX_SIZE_MB * 1024 * 1024) {
+      result.textContent = `Файл «${file.name}» больше ${ATTACHMENT_MAX_SIZE_MB} МБ.`;
+      continue;
+    }
+    selectedAttachments.push({ file });
+  }
+  event.target.value = "";
+  renderAttachmentList();
+}
+
+function clearAttachments() {
+  selectedAttachments = [];
+  const input = byId("attachmentInput");
+  if (input) input.value = "";
+  renderAttachmentList();
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(new Error(`Не удалось прочитать файл «${file.name}»`));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function collectAttachmentsPayload() {
+  const payload = [];
+  for (const item of selectedAttachments) {
+    payload.push({
+      filename: item.file.name,
+      content_type: item.file.type || "",
+      data_base64: await readFileAsBase64(item.file),
+    });
+  }
+  return payload;
+}
+
 async function createTicket() {
   setSession();
   const result = byId("createResult");
@@ -618,14 +723,17 @@ async function createTicket() {
   result.textContent = "";
 
   try {
+    const attachments = await collectAttachmentsPayload();
     const data = await api.createTicket({
       max_user_id: state.maxUserId,
       hotel_id: hotelId,
       category_id: categoryId,
       topic_id: topicId,
       description,
+      attachments,
     });
-    byId("createSuccessText").textContent = `ID заявки: ${data.external_id}\nСтатус: ${statusLabel(data.current_status)}`;
+    const filesLine = attachments.length ? `\nФайлов приложено: ${attachments.length}` : "";
+    byId("createSuccessText").textContent = `ID заявки: ${data.external_id}\nСтатус: ${statusLabel(data.current_status)}${filesLine}`;
     byId("createFormCard").hidden = true;
     byId("createHintCard").hidden = true;
     byId("createSuccessCard").hidden = false;
@@ -633,6 +741,7 @@ async function createTicket() {
     byId("categorySelect").value = "";
     fillTopics();
     byId("descriptionInput").value = "";
+    clearAttachments();
   } catch (error) {
     result.textContent = error.message;
   } finally {
@@ -1019,6 +1128,14 @@ async function init() {
   byId("requestCodeBtn").addEventListener("click", requestCode);
   byId("bindEmailBtn").addEventListener("click", bindEmail);
   byId("createTicketBtn").addEventListener("click", createTicket);
+  const attachmentInput = byId("attachmentInput");
+  if (attachmentInput) {
+    attachmentInput.addEventListener("change", handleAttachmentChange);
+  }
+  const attachmentHint = byId("attachmentHint");
+  if (attachmentHint) {
+    attachmentHint.textContent = `До ${ATTACHMENT_MAX_COUNT} файлов, каждый до ${ATTACHMENT_MAX_SIZE_MB} МБ. Форматы: ${ATTACHMENT_ALLOWED_EXTENSIONS.join(", ")}.`;
+  }
   byId("refreshTicketsBtn").addEventListener("click", refreshTickets);
   byId("closeTicketDetailsPageBtn").addEventListener("click", closeTicketDetails);
   byId("categorySelect").addEventListener("change", fillTopics);

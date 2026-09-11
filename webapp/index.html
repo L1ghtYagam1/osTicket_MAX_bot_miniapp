@@ -69,6 +69,10 @@
             <select id="topicSelect"></select>
             <label>Описание</label>
             <textarea id="descriptionInput" rows="8" placeholder="Опишите проблему"></textarea>
+            <label>Файлы (необязательно)</label>
+            <input id="attachmentInput" type="file" multiple />
+            <div id="attachmentHint" class="field-hint"></div>
+            <div id="attachmentList" class="attachment-list"></div>
             <button id="createTicketBtn" class="primary full-width">Отправить заявку</button>
             <div id="createResult" class="result"></div>
           </div>

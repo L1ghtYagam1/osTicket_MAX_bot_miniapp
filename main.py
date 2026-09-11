@@ -1,12 +1,14 @@
 import contextlib
 import asyncio
+import base64
 import json
 import logging
 import os
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from time import time
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import aiohttp
 
@@ -59,6 +61,7 @@ STATE_WAITING_HOTEL = "waiting_hotel"
 STATE_WAITING_CATEGORY = "waiting_category"
 STATE_WAITING_TOPIC = "waiting_topic"
 STATE_WAITING_DESCRIPTION = "waiting_description"
+STATE_WAITING_ATTACHMENTS = "waiting_attachments"
 STATE_WAITING_ADMIN_BROADCAST = "waiting_admin_broadcast"
 STATE_WAITING_STATUS_TICKET_ID = "waiting_status_ticket_id"
 
@@ -69,9 +72,23 @@ ACTION_CANCEL_REQUEST = "cancel_request"
 ACTION_BACK_HOTEL = "back_hotel"
 ACTION_BACK_CATEGORY = "back_category"
 ACTION_BACK_TOPIC = "back_topic"
+ACTION_BACK_DESCRIPTION = "back_description"
+ACTION_SUBMIT_TICKET = "submit_ticket"
 ACTION_MY_TICKETS = "my_tickets"
 ACTION_CHECK_STATUS = "check_status"
 ACTION_OPEN_APP = "open_app"
+
+# Лимиты вложений совпадают с дефолтами backend (backend/config.py).
+ATTACHMENT_MAX_COUNT = int(os.getenv("ATTACHMENT_MAX_COUNT", "5"))
+ATTACHMENT_MAX_FILE_SIZE_MB = int(os.getenv("ATTACHMENT_MAX_FILE_SIZE_MB", "10"))
+ATTACHMENT_ALLOWED_EXTENSIONS = {
+    item.strip().lower().lstrip(".")
+    for item in os.getenv(
+        "ATTACHMENT_ALLOWED_EXTENSIONS",
+        "pdf,png,jpg,jpeg,gif,webp,txt,doc,docx,xls,xlsx,csv,zip",
+    ).split(",")
+    if item.strip()
+}
 
 CONVERSATION_STATE: dict[str, dict[str, Any]] = {}
 
@@ -218,6 +235,64 @@ def find_catalog_item(items: list[dict[str, Any]], item_id: int) -> Optional[dic
     return next((item for item in items if item["id"] == item_id), None)
 
 
+def extract_incoming_attachments(update: dict[str, Any]) -> list[dict[str, Any]]:
+    """Достаёт вложения из входящего сообщения MAX.
+
+    Формат по схеме MAX/TamTam Bot API: message.body.attachments — список
+    объектов {type, payload:{url,...}, filename, size}.
+    """
+    message = update.get("message") or {}
+    body = message.get("body")
+    attachments = None
+    if isinstance(body, dict):
+        attachments = body.get("attachments")
+    if attachments is None:
+        attachments = message.get("attachments")
+    if not isinstance(attachments, list):
+        return []
+    return [item for item in attachments if isinstance(item, dict)]
+
+
+def attachment_url(attachment: dict[str, Any]) -> Optional[str]:
+    payload = attachment.get("payload")
+    if isinstance(payload, dict):
+        for key in ("url", "download_url", "href"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    for key in ("url", "download_url"):
+        value = attachment.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def attachment_filename(attachment: dict[str, Any], url: str, index: int) -> str:
+    name = attachment.get("filename") or attachment.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    # У изображений имени обычно нет — синтезируем из URL или типа.
+    path_name = PurePosixPath(urlparse(url).path).name
+    if path_name and "." in path_name:
+        return path_name
+    attach_type = str(attachment.get("type") or "file").lower()
+    default_ext = {"image": "jpg", "video": "mp4", "audio": "mp3"}.get(attach_type, "bin")
+    return f"attachment_{index}.{default_ext}"
+
+
+def attachment_extension(filename: str) -> str:
+    return PurePosixPath(filename).suffix.lower().lstrip(".")
+
+
+async def download_attachment(url: str) -> bytes:
+    timeout = aiohttp.ClientTimeout(total=BACKEND_TIMEOUT)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(url) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"HTTP {response.status}")
+            return await response.read()
+
+
 class BackendClient:
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url
@@ -297,6 +372,7 @@ class BackendClient:
         category_id: int,
         topic_id: int,
         description: str,
+        attachments: Optional[list[dict[str, str]]] = None,
     ) -> dict[str, Any]:
         return await self.request(
             "POST",
@@ -307,6 +383,7 @@ class BackendClient:
                 "category_id": category_id,
                 "topic_id": topic_id,
                 "description": description,
+                "attachments": attachments or [],
             },
         )
 
@@ -481,12 +558,40 @@ async def ask_for_topic(max_client: MaxBotClient, backend: BackendClient, chat_i
 
 
 async def ask_for_description(max_client: MaxBotClient, chat_id: str, user_id: str) -> None:
+    form = get_session(user_id)["form"]
+    summary = " • ".join(
+        part for part in (form.get("hotel_name"), form.get("category_name"), form.get("topic_name")) if part
+    )
+    prompt = "Введите текст вашей заявки:"
+    if summary:
+        prompt = f"Заявка: {summary}\n\n{prompt}"
     buttons = [[
         {"type": "callback", "text": "Назад", "payload": make_payload(ACTION_BACK_TOPIC)},
         {"type": "callback", "text": "Отмена", "payload": make_payload(ACTION_CANCEL_REQUEST)},
     ]]
-    await max_client.send_message(chat_id, "Введите текст вашей заявки:", buttons=buttons, user_id=user_id)
+    await max_client.send_message(chat_id, prompt, buttons=buttons, user_id=user_id)
     set_state(user_id, STATE_WAITING_DESCRIPTION)
+
+
+async def ask_for_attachments(max_client: MaxBotClient, chat_id: str, user_id: str) -> None:
+    attachments = get_session(user_id)["form"].get("attachments", [])
+    count_line = f"\nУже приложено файлов: {len(attachments)}." if attachments else ""
+    allowed = ", ".join(sorted(ATTACHMENT_ALLOWED_EXTENSIONS)) or "любые"
+    text = (
+        "Прикрепите файлы к заявке — просто отправьте их в чат.\n"
+        f"До {ATTACHMENT_MAX_COUNT} файлов, каждый до {ATTACHMENT_MAX_FILE_SIZE_MB} МБ.\n"
+        f"Форматы: {allowed}."
+        f"{count_line}\n\n"
+        "Когда закончите — нажмите «Отправить заявку»."
+    )
+    buttons = [[
+        {"type": "callback", "text": "Отправить заявку", "payload": make_payload(ACTION_SUBMIT_TICKET)},
+    ], [
+        {"type": "callback", "text": "Назад", "payload": make_payload(ACTION_BACK_DESCRIPTION)},
+        {"type": "callback", "text": "Отмена", "payload": make_payload(ACTION_CANCEL_REQUEST)},
+    ]]
+    await max_client.send_message(chat_id, text, buttons=buttons, user_id=user_id)
+    set_state(user_id, STATE_WAITING_ATTACHMENTS)
 
 
 async def ask_for_status_ticket(max_client: MaxBotClient, chat_id: str, user_id: str) -> None:
@@ -512,6 +617,23 @@ async def show_user_tickets(max_client: MaxBotClient, backend: BackendClient, ch
         lines.append(f"#{ticket['external_id']} | {status} | {ticket['subject']}")
     await max_client.send_message(chat_id, "\n".join(lines), user_id=user_id)
     await show_main_menu(max_client, chat_id, user_id)
+
+
+async def handle_help(max_client: MaxBotClient, chat_id: str, user_id: str) -> None:
+    lines = [
+        "Я помогаю создавать заявки в поддержку.",
+        "",
+        "Команды:",
+        "/start — начать работу / регистрация",
+        "/menu — главное меню",
+        "/help — эта справка",
+        "",
+        "Как создать заявку: «Создать заявку» → отель → категория → тема → описание → "
+        "при необходимости прикрепите файлы → «Отправить заявку».",
+    ]
+    if PUBLIC_WEBAPP_URL:
+        lines.append(f"\nМини-приложение: {PUBLIC_WEBAPP_URL}")
+    await max_client.send_message(chat_id, "\n".join(lines), user_id=user_id)
 
 
 async def handle_start(max_client: MaxBotClient, backend: BackendClient, chat_id: str, user_id: str) -> None:
@@ -588,9 +710,97 @@ async def handle_description_input(
     user_id: str,
     text: str,
 ) -> None:
+    if not text.strip():
+        await max_client.send_message(chat_id, "Опишите проблему текстом.", user_id=user_id)
+        return
+    session = get_session(user_id)
+    session["form"]["description"] = text
+    session["form"].setdefault("attachments", [])
+    save_state()
+    await ask_for_attachments(max_client, chat_id, user_id)
+
+
+async def handle_attachments_message(
+    max_client: MaxBotClient,
+    chat_id: str,
+    user_id: str,
+    update: dict[str, Any],
+) -> None:
+    session = get_session(user_id)
+    attachments: list[dict[str, str]] = session["form"].setdefault("attachments", [])
+    raw_attachments = extract_incoming_attachments(update)
+
+    if not raw_attachments:
+        await max_client.send_message(
+            chat_id,
+            "Отправьте файлы вложениями или нажмите «Отправить заявку».",
+            user_id=user_id,
+        )
+        return
+
+    added = 0
+    errors: list[str] = []
+    for index, attachment in enumerate(raw_attachments, start=len(attachments) + 1):
+        if len(attachments) >= ATTACHMENT_MAX_COUNT:
+            errors.append(f"достигнут лимит {ATTACHMENT_MAX_COUNT} файлов")
+            break
+        url = attachment_url(attachment)
+        if not url:
+            errors.append("не удалось получить ссылку на файл")
+            continue
+        filename = attachment_filename(attachment, url, index)
+        extension = attachment_extension(filename)
+        if ATTACHMENT_ALLOWED_EXTENSIONS and extension not in ATTACHMENT_ALLOWED_EXTENSIONS:
+            errors.append(f"«{filename}»: тип не поддерживается")
+            continue
+        try:
+            content = await download_attachment(url)
+        except Exception as exc:
+            logging.exception("Не удалось скачать вложение %s", url)
+            errors.append(f"«{filename}»: не удалось скачать ({exc})")
+            continue
+        if len(content) > ATTACHMENT_MAX_FILE_SIZE_MB * 1024 * 1024:
+            errors.append(f"«{filename}»: больше {ATTACHMENT_MAX_FILE_SIZE_MB} МБ")
+            continue
+        attachments.append(
+            {
+                "filename": filename,
+                "content_type": str(attachment.get("mime") or attachment.get("content_type") or ""),
+                "data_base64": base64.b64encode(content).decode("ascii"),
+            }
+        )
+        added += 1
+
+    save_state()
+    lines = []
+    if added:
+        lines.append(f"Добавлено файлов: {added}. Всего: {len(attachments)}.")
+    if errors:
+        lines.append("Не добавлены: " + "; ".join(errors) + ".")
+    if not lines:
+        lines.append("Файлы не добавлены.")
+    lines.append("Отправьте ещё файлы или нажмите «Отправить заявку».")
+    buttons = [[
+        {"type": "callback", "text": "Отправить заявку", "payload": make_payload(ACTION_SUBMIT_TICKET)},
+    ], [
+        {"type": "callback", "text": "Отмена", "payload": make_payload(ACTION_CANCEL_REQUEST)},
+    ]]
+    await max_client.send_message(chat_id, "\n".join(lines), buttons=buttons, user_id=user_id)
+
+
+async def submit_ticket(
+    max_client: MaxBotClient,
+    backend: BackendClient,
+    chat_id: str,
+    user_id: str,
+) -> None:
     session = get_session(user_id)
     form = session["form"]
     flags = session.setdefault("flags", {})
+    if not form.get("description"):
+        await max_client.send_message(chat_id, "Сначала опишите заявку.", user_id=user_id)
+        await ask_for_description(max_client, chat_id, user_id)
+        return
     if flags.get("ticket_submit_in_progress"):
         await max_client.send_message(
             chat_id,
@@ -599,6 +809,7 @@ async def handle_description_input(
         )
         return
 
+    attachments = form.get("attachments", [])
     flags["ticket_submit_in_progress"] = True
     save_state()
     try:
@@ -607,7 +818,8 @@ async def handle_description_input(
             hotel_id=form["hotel_id"],
             category_id=form["category_id"],
             topic_id=form["topic_id"],
-            description=text,
+            description=form["description"],
+            attachments=attachments,
         )
     except Exception as exc:
         flags["ticket_submit_in_progress"] = False
@@ -618,13 +830,14 @@ async def handle_description_input(
         return
 
     flags["ticket_submit_in_progress"] = False
-    save_state()
+    reset_form(user_id)
     set_state(user_id, STATE_IDLE)
+    files_line = f"\nФайлов приложено: {len(attachments)}." if attachments else ""
     buttons = build_buttons([("Новая заявка", make_payload(ACTION_NEW_REQUEST))])
     await max_client.send_message(
         chat_id,
         f"Заявка отправлена. ID: {ticket['external_id']}. "
-        f"Статус: {status_label(ticket.get('current_status') or ticket.get('status'))}",
+        f"Статус: {status_label(ticket.get('current_status') or ticket.get('status'))}{files_line}",
         buttons=buttons,
         user_id=user_id,
     )
@@ -741,6 +954,14 @@ async def handle_callback(max_client: MaxBotClient, backend: BackendClient, upda
         await ask_for_topic(max_client, backend, chat_id, user_id)
         return
 
+    if action == ACTION_BACK_DESCRIPTION:
+        await ask_for_description(max_client, chat_id, user_id)
+        return
+
+    if action == ACTION_SUBMIT_TICKET:
+        await submit_ticket(max_client, backend, chat_id, user_id)
+        return
+
     catalog = await backend.get_catalog()
 
     if action == "hotel" and state == STATE_WAITING_HOTEL:
@@ -792,9 +1013,26 @@ async def handle_message(max_client: MaxBotClient, backend: BackendClient, updat
 
     text = extract_text(update)
     state = get_session(user_id).get("state", STATE_IDLE)
+    command = text.lower().split()[0] if text else ""
 
-    if text.lower() == "/start":
+    if command == "/start":
         await handle_start(max_client, backend, chat_id, user_id)
+        return
+
+    if command == "/help":
+        await handle_help(max_client, chat_id, user_id)
+        return
+
+    if command == "/menu":
+        user = await backend.get_user(user_id)
+        if user:
+            await show_main_menu(max_client, chat_id, user_id)
+        else:
+            await ask_for_email(max_client, chat_id, user_id)
+        return
+
+    if state == STATE_WAITING_ATTACHMENTS:
+        await handle_attachments_message(max_client, chat_id, user_id, update)
         return
 
     if state == STATE_WAITING_EMAIL:
