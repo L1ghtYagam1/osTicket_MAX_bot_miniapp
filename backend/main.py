@@ -392,7 +392,9 @@ async def create_ticket_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-    ticket = await enrich_ticket_status(db, ticket)
+    # Только что созданная заявка имеет локальный статус "created" — не делаем
+    # второй (медленный) запрос статуса в osTicket сразу после создания.
+    ticket.current_status = ticket.status
     return TicketOut.model_validate(ticket)
 
 

@@ -1,3 +1,32 @@
+// Глобальный перехват ошибок: на старых WebView сбой JS раньше давал белый экран
+// без единого сообщения. Теперь пользователь хотя бы видит, что случилось.
+// Намеренно ES5 (var/function), чтобы сам обработчик не упал на старом движке.
+(function () {
+  function showFatal(msg) {
+    try {
+      var el = document.getElementById("fatalError");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "fatalError";
+        el.style.cssText =
+          "position:fixed;left:0;right:0;top:0;z-index:99999;padding:12px 16px;" +
+          "background:#b3261e;color:#fff;font:14px system-ui,-apple-system,sans-serif;text-align:center";
+        (document.body || document.documentElement).appendChild(el);
+      }
+      el.textContent =
+        "Не удалось загрузить приложение. Обновите страницу или откройте в браузере." +
+        (msg ? " (" + msg + ")" : "");
+    } catch (e) {}
+  }
+  window.addEventListener("error", function (event) {
+    showFatal(event && event.message ? event.message : "");
+  });
+  window.addEventListener("unhandledrejection", function (event) {
+    var reason = event && event.reason;
+    showFatal(reason && reason.message ? reason.message : String(reason || ""));
+  });
+})();
+
 const state = {
   maxUserId: localStorage.getItem("max_user_id") || "",
   fullName: localStorage.getItem("full_name") || "",
@@ -252,18 +281,21 @@ const STATUS_LABELS = {
   deleted: "Удалена",
 };
 
+function toText(value) {
+  return value === undefined || value === null ? "" : String(value);
+}
+
 function statusLabel(value) {
-  const key = String(value ?? "").trim().toLowerCase();
+  const key = toText(value).trim().toLowerCase();
   return STATUS_LABELS[key] || key || "неизвестен";
 }
 
+// Без String.prototype.replaceAll: он появился только в WebView ~2020+ и на
+// старых устройствах роняет рендер (пустой экран). Один regex — совместимо везде.
+const HTML_ESCAPE_MAP = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
 function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+  return toText(value).replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch]);
 }
 
 function setLaunchStatus(message) {
@@ -523,10 +555,12 @@ async function loadCatalog() {
 function fillTopics() {
   const categoryId = Number(byId("categorySelect").value);
   const topicSelect = byId("topicSelect");
-  const category = state.catalog?.categories.find((item) => item.id === categoryId);
+  const categories = (state.catalog && state.catalog.categories) || [];
+  const category = categories.find((item) => item.id === categoryId);
+  const topics = (category && category.topics) || [];
   topicSelect.innerHTML = [
     '<option value="">Выбрать</option>',
-    ...(category?.topics || [])
+    ...topics
       .filter((item) => item.is_active)
       .map((item) => `<option value="${Number(item.id)}">${escapeHtml(item.name)}</option>`),
   ].join("");
