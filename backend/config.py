@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     osticket_api_url: str = ""
     osticket_api_key: str = ""
-    osticket_request_timeout: int = 20
+    osticket_request_timeout: int = 90
     osticket_status_api_url: str = ""
     osticket_extended_api_url: str = ""
     osticket_extended_api_staff_id: int = 1
@@ -54,7 +54,7 @@ class Settings(BaseSettings):
 
     # Вложения к заявкам (mini app и бот). Лимиты дублируются на клиенте.
     attachment_max_count: int = 5
-    attachment_max_file_size_mb: int = 10
+    attachment_max_file_size_mb: int = 30
     attachment_allowed_extensions_raw: str = Field(
         default="pdf,png,jpg,jpeg,gif,webp,txt,doc,docx,xls,xlsx,csv,zip",
         alias="ATTACHMENT_ALLOWED_EXTENSIONS",

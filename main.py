@@ -24,7 +24,7 @@ MAX_BOT_TOKEN = os.getenv("MAX_BOT_TOKEN", "").strip()
 MAX_POLL_TIMEOUT = int(os.getenv("MAX_POLL_TIMEOUT", "25"))
 
 BACKEND_API_URL = os.getenv("BACKEND_API_URL", "http://backend:8000/api/v1").strip().rstrip("/")
-BACKEND_TIMEOUT = int(os.getenv("BACKEND_TIMEOUT", "20"))
+BACKEND_TIMEOUT = int(os.getenv("BACKEND_TIMEOUT", "90"))
 PUBLIC_WEBAPP_URL = os.getenv("PUBLIC_WEBAPP_URL", "").strip()
 INTERNAL_API_TOKEN = os.getenv("INTERNAL_API_TOKEN", "").strip()
 TICKET_STATUS_POLL_INTERVAL_SECONDS = int(os.getenv("TICKET_STATUS_POLL_INTERVAL_SECONDS", "60"))
@@ -80,7 +80,7 @@ ACTION_OPEN_APP = "open_app"
 
 # Лимиты вложений совпадают с дефолтами backend (backend/config.py).
 ATTACHMENT_MAX_COUNT = int(os.getenv("ATTACHMENT_MAX_COUNT", "5"))
-ATTACHMENT_MAX_FILE_SIZE_MB = int(os.getenv("ATTACHMENT_MAX_FILE_SIZE_MB", "10"))
+ATTACHMENT_MAX_FILE_SIZE_MB = int(os.getenv("ATTACHMENT_MAX_FILE_SIZE_MB", "30"))
 ATTACHMENT_ALLOWED_EXTENSIONS = {
     item.strip().lower().lstrip(".")
     for item in os.getenv(
@@ -291,6 +291,30 @@ async def download_attachment(url: str) -> bytes:
             if response.status >= 400:
                 raise RuntimeError(f"HTTP {response.status}")
             return await response.read()
+
+
+def format_bytes(num: int) -> str:
+    value = float(num)
+    for unit in ("Б", "КБ", "МБ"):
+        if value < 1024:
+            return f"{value:.0f} {unit}" if unit == "Б" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} ГБ"
+
+
+def attachment_declared_size(attachment: dict[str, Any]) -> Optional[int]:
+    """Размер файла из метаданных MAX (в байтах), если он есть — чтобы отбросить
+    слишком большой файл до скачивания."""
+    candidates = [attachment]
+    payload = attachment.get("payload")
+    if isinstance(payload, dict):
+        candidates.append(payload)
+    for source in candidates:
+        for key in ("size", "file_size", "filesize", "bytes"):
+            value = source.get(key)
+            if isinstance(value, (int, float)) and value > 0:
+                return int(value)
+    return None
 
 
 class BackendClient:
@@ -745,7 +769,8 @@ async def handle_attachments_message(
     # чтобы бот не выглядел зависшим.
     await max_client.send_message(chat_id, "⏳ Загружаю файлы, подождите…", user_id=user_id)
 
-    added = 0
+    max_bytes = ATTACHMENT_MAX_FILE_SIZE_MB * 1024 * 1024
+    added: list[str] = []
     errors: list[str] = []
     for index, attachment in enumerate(raw_attachments, start=len(attachments) + 1):
         if len(attachments) >= ATTACHMENT_MAX_COUNT:
@@ -760,14 +785,20 @@ async def handle_attachments_message(
         if ATTACHMENT_ALLOWED_EXTENSIONS and extension not in ATTACHMENT_ALLOWED_EXTENSIONS:
             errors.append(f"«{filename}»: тип не поддерживается")
             continue
+        # Размер известен из метаданных MAX — отбрасываем большой файл до скачивания.
+        declared = attachment_declared_size(attachment)
+        if declared is not None and declared > max_bytes:
+            errors.append(f"«{filename}»: {format_bytes(declared)} — больше {ATTACHMENT_MAX_FILE_SIZE_MB} МБ")
+            continue
         try:
             content = await download_attachment(url)
         except Exception as exc:
             logging.exception("Не удалось скачать вложение %s", url)
             errors.append(f"«{filename}»: не удалось скачать ({exc})")
             continue
-        if len(content) > ATTACHMENT_MAX_FILE_SIZE_MB * 1024 * 1024:
-            errors.append(f"«{filename}»: больше {ATTACHMENT_MAX_FILE_SIZE_MB} МБ")
+        size = len(content)
+        if size > max_bytes:
+            errors.append(f"«{filename}»: {format_bytes(size)} — больше {ATTACHMENT_MAX_FILE_SIZE_MB} МБ")
             continue
         attachments.append(
             {
@@ -776,15 +807,16 @@ async def handle_attachments_message(
                 "data_base64": base64.b64encode(content).decode("ascii"),
             }
         )
-        added += 1
+        added.append(f"{filename} ({format_bytes(size)})")
 
     save_state()
     lines = []
     if added:
-        lines.append(f"Добавлено файлов: {added}. Всего: {len(attachments)}.")
+        lines.append(f"Добавлено ({len(added)}): " + "; ".join(added) + ".")
+        lines.append(f"Всего файлов: {len(attachments)}.")
     if errors:
         lines.append("Не добавлены: " + "; ".join(errors) + ".")
-    if not lines:
+    if not added and not errors:
         lines.append("Файлы не добавлены.")
     lines.append("Отправьте ещё файлы или нажмите «Отправить заявку».")
     buttons = [[

@@ -626,7 +626,7 @@ function resetCreateFormVisibility() {
 // Лимиты вложений дублируют дефолты backend (backend/config.py) — это только UX,
 // финальная проверка всё равно на сервере.
 const ATTACHMENT_MAX_COUNT = 5;
-const ATTACHMENT_MAX_SIZE_MB = 10;
+const ATTACHMENT_MAX_SIZE_MB = 30;
 const ATTACHMENT_ALLOWED_EXTENSIONS = [
   "pdf", "png", "jpg", "jpeg", "gif", "webp",
   "txt", "doc", "docx", "xls", "xlsx", "csv", "zip",
