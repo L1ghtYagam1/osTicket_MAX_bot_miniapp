@@ -389,9 +389,14 @@ async def create_ticket_endpoint(
             attachments=payload.attachments,
         )
     except ValueError as exc:
+        logger.warning("Заявка отклонена (валидация) для max_user_id=%s: %s", payload.max_user_id, exc)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except RuntimeError as exc:
+        logger.error("Ошибка создания заявки в osTicket для max_user_id=%s: %s", payload.max_user_id, exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Непредвиденная ошибка при создании заявки для max_user_id=%s", payload.max_user_id)
+        raise
     # Только что созданная заявка имеет локальный статус "created" — не делаем
     # второй (медленный) запрос статуса в osTicket сразу после создания.
     ticket.current_status = ticket.status

@@ -603,6 +603,7 @@ async def show_user_tickets(max_client: MaxBotClient, backend: BackendClient, ch
     try:
         tickets = await backend.list_tickets(user_id)
     except Exception as exc:
+        logging.exception("Не удалось загрузить заявки пользователя %s", user_id)
         await max_client.send_message(chat_id, f"Не удалось загрузить заявки: {exc}", user_id=user_id)
         await show_main_menu(max_client, chat_id, user_id)
         return
@@ -672,6 +673,7 @@ async def handle_email_input(
     try:
         await backend.request_email_code(max_user_id=user_id, full_name=full_name, email=text)
     except Exception as exc:
+        logging.exception("Не удалось отправить код на %s (пользователь %s)", text, user_id)
         await max_client.send_message(chat_id, f"Не удалось отправить код: {exc}", user_id=user_id)
         return
     await max_client.send_message(chat_id, "Код отправлен на рабочую почту.", user_id=user_id)
@@ -695,6 +697,7 @@ async def handle_email_code_input(
     try:
         await backend.verify_email_code(max_user_id=user_id, full_name=full_name, email=email, code=text.strip())
     except Exception as exc:
+        logging.exception("Не удалось подтвердить почту %s (пользователь %s)", email, user_id)
         await max_client.send_message(chat_id, f"Не удалось подтвердить почту: {exc}", user_id=user_id)
         return
     session["form"].pop("pending_email", None)
@@ -830,6 +833,14 @@ async def submit_ticket(
             attachments=attachments,
         )
     except Exception as exc:
+        logging.exception(
+            "Не удалось отправить заявку: user=%s hotel=%s category=%s topic=%s файлов=%s",
+            user_id,
+            form.get("hotel_id"),
+            form.get("category_id"),
+            form.get("topic_id"),
+            len(attachments),
+        )
         flags["ticket_submit_in_progress"] = False
         save_state()
         set_state(user_id, STATE_IDLE)
@@ -870,6 +881,7 @@ async def handle_status_ticket_input(
             user_id=user_id,
         )
     except Exception as exc:
+        logging.exception("Не удалось получить статус заявки #%s для пользователя %s", ticket_id, user_id)
         await max_client.send_message(chat_id, f"Не удалось получить статус заявки: {exc}", user_id=user_id)
     set_state(user_id, STATE_IDLE)
     await show_main_menu(max_client, chat_id, user_id)
