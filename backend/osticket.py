@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+from time import perf_counter
 from typing import Any
 
 import aiohttp
@@ -428,14 +429,23 @@ class OsTicketClient:
                 for item in attachments
             ]
 
+        started = perf_counter()
         try:
             session = await self.session()
             async with session.post(settings.osticket_api_url, headers=self._headers(), json=payload) as response:
                 body = await response.text()
+                elapsed = perf_counter() - started
+                logger.info(
+                    "osTicket POST /tickets занял %.2f с (вложений: %d, статус: %s)",
+                    elapsed,
+                    len(attachments or []),
+                    response.status,
+                )
                 if response.status != 201:
                     raise RuntimeError(f"osTicket error {response.status}: {body}")
                 ticket_id = extract_ticket_id(body, dict(response.headers))
         except asyncio.TimeoutError as exc:
+            logger.warning("osTicket POST /tickets таймаут после %.2f с", perf_counter() - started)
             raise RuntimeError("Timeout while connecting to osTicket") from exc
 
         if not ticket_id:
