@@ -54,6 +54,7 @@ STATUS_ALIASES = {
     "resolved": "resolved",
     "solved": "resolved",
     "решена": "resolved",
+    "решено": "resolved",
     "решён": "resolved",
     "решен": "resolved",
     "closed": "closed",
@@ -61,6 +62,7 @@ STATUS_ALIASES = {
     "completed": "closed",
     "complete": "closed",
     "закрыта": "closed",
+    "закрыто": "closed",
     "закрыт": "closed",
     "archived": "archived",
     "archive": "archived",
@@ -71,8 +73,10 @@ STATUS_ALIASES = {
     "удален": "deleted",
 }
 
-# Статусы, после которых заявка уже не меняется — их не нужно переспрашивать у osTicket.
-TERMINAL_STATUSES = frozenset({"closed", "archived", "deleted"})
+# Статусы, после которых заявку не опрашиваем. resolved включён сознательно:
+# «решённые» заявки считаем завершёнными, иначе сотни старых тикетов опрашивались бы
+# в osTicket каждый цикл. Переоткрытие вернёт тикет в работу новым обращением.
+TERMINAL_STATUSES = frozenset({"resolved", "closed", "archived", "deleted"})
 
 STATUS_LABELS = {
     "created": "Создана",
