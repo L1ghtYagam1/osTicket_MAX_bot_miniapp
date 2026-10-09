@@ -6,7 +6,7 @@ import logging
 import os
 import re
 from pathlib import Path, PurePosixPath
-from time import time
+from time import perf_counter, time
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -864,11 +864,13 @@ async def submit_ticket(
     attachments = form.get("attachments", [])
     flags["ticket_submit_in_progress"] = True
     save_state()
+    submit_started = perf_counter()
     # Отправка заявки с вложениями в osTicket может занять несколько секунд —
     # сразу сообщаем пользователю, что идёт отправка.
     progress = "⏳ Отправляю заявку…" + (" Загружаю файлы, это может занять время." if attachments else "")
     await max_client.send_message(chat_id, progress, user_id=user_id)
     try:
+        backend_started = perf_counter()
         ticket = await backend.create_ticket(
             max_user_id=user_id,
             hotel_id=form["hotel_id"],
@@ -877,6 +879,7 @@ async def submit_ticket(
             description=form["description"],
             attachments=attachments,
         )
+        backend_elapsed = perf_counter() - backend_started
     except Exception as exc:
         logging.exception(
             "Не удалось отправить заявку: user=%s hotel=%s category=%s topic=%s файлов=%s",
@@ -904,6 +907,14 @@ async def submit_ticket(
         f"Статус: {status_label(ticket.get('current_status') or ticket.get('status'))}{files_line}",
         buttons=buttons,
         user_id=user_id,
+    )
+    logging.info(
+        "ТАЙМИНГ отправки заявки #%s: backend(bot→backend→osTicket→назад)=%.2f c, "
+        "вся команда(с сообщениями в MAX)=%.2f c, вложений=%d",
+        ticket.get("external_id"),
+        backend_elapsed,
+        perf_counter() - submit_started,
+        len(attachments),
     )
 
 
