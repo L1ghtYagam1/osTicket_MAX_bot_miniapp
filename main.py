@@ -92,6 +92,19 @@ ATTACHMENT_ALLOWED_EXTENSIONS = {
 
 CONVERSATION_STATE: dict[str, dict[str, Any]] = {}
 
+# Блокировки по пользователю: обработку апдейтов разных пользователей ведём
+# параллельно, а одного пользователя — строго по очереди, даже если его события
+# пришли в разных пачках (цикл опроса их не ждёт и уже забрал следующие).
+USER_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def get_user_lock(user_id: str) -> asyncio.Lock:
+    lock = USER_LOCKS.get(user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        USER_LOCKS[user_id] = lock
+    return lock
+
 
 def ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -1135,17 +1148,20 @@ async def dispatch_updates(
         user_id, _, _ = extract_sender(update)
         groups.setdefault(user_id or "", []).append(update)
 
-    async def run_group(items: list[dict[str, Any]]) -> None:
-        for item in items:
-            try:
-                await dispatch_update(max_client, backend, item)
-            except Exception:
-                # Одно битое обновление не должно обрывать обработку пачки:
-                # marker уже сдвинут, повторно эти события не придут.
-                logging.exception("Ошибка при обработке обновления: %s", item)
-            touch_heartbeat()
+    async def run_group(user_id: str, items: list[dict[str, Any]]) -> None:
+        # Персистентная блокировка по пользователю сохраняет порядок его событий
+        # даже когда эта пачка обрабатывается параллельно со следующей.
+        async with get_user_lock(user_id):
+            for item in items:
+                try:
+                    await dispatch_update(max_client, backend, item)
+                except Exception:
+                    # Одно битое обновление не должно обрывать обработку пачки:
+                    # marker уже сдвинут, повторно эти события не придут.
+                    logging.exception("Ошибка при обработке обновления: %s", item)
+                touch_heartbeat()
 
-    await asyncio.gather(*(run_group(items) for items in groups.values()))
+    await asyncio.gather(*(run_group(uid, items) for uid, items in groups.items()))
 
 
 async def dispatch_update(max_client: MaxBotClient, backend: BackendClient, update: dict[str, Any]) -> None:
@@ -1220,13 +1236,19 @@ async def run() -> None:
     stop_event = asyncio.Event()
     notifications_task = asyncio.create_task(notifications_loop(max_client, backend, stop_event))
 
+    pending_tasks: set[asyncio.Task] = set()
     try:
         while True:
             try:
                 updates = await max_client.get_updates()
                 touch_heartbeat()
                 if updates:
-                    await dispatch_updates(max_client, backend, updates)
+                    # Обработку НЕ ждём: иначе медленная операция (создание заявки
+                    # в osTicket) останавливает опрос, и команды всех пользователей
+                    # висят в очереди. Порядок внутри диалога хранит USER_LOCKS.
+                    task = asyncio.create_task(dispatch_updates(max_client, backend, updates))
+                    pending_tasks.add(task)
+                    task.add_done_callback(pending_tasks.discard)
                 save_updates_marker(max_client.marker)
             except Exception:
                 logging.exception("Ошибка в цикле обработки обновлений")
@@ -1238,6 +1260,8 @@ async def run() -> None:
         notifications_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await notifications_task
+        for task in list(pending_tasks):
+            task.cancel()
         await backend.close()
         await max_client.close()
 
