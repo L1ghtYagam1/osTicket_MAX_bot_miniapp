@@ -452,6 +452,24 @@ class BackendClient:
             headers={"X-Internal-Token": INTERNAL_API_TOKEN},
         )
 
+    async def sync_reply_notifications(self) -> list[dict[str, Any]]:
+        if not INTERNAL_API_TOKEN:
+            return []
+        return await self.request(
+            "POST",
+            "/internal/ticket-reply-sync",
+            headers={"X-Internal-Token": INTERNAL_API_TOKEN},
+        )
+
+    async def mark_reply_notification_sent(self, notification_id: int) -> None:
+        if not INTERNAL_API_TOKEN:
+            return
+        await self.request(
+            "POST",
+            f"/internal/ticket-reply-notifications/{notification_id}/sent",
+            headers={"X-Internal-Token": INTERNAL_API_TOKEN},
+        )
+
 
 class MaxBotClient:
     def __init__(self, token: str, base_url: str) -> None:
@@ -1208,6 +1226,28 @@ async def process_status_notifications(max_client: MaxBotClient, backend: Backen
             logging.exception("Не удалось отправить уведомление о смене статуса: %s", notification)
 
 
+async def process_reply_notifications(max_client: MaxBotClient, backend: BackendClient) -> None:
+    if not INTERNAL_API_TOKEN:
+        return
+    notifications = await backend.sync_reply_notifications()
+    for notification in notifications:
+        try:
+            author = (notification.get("author") or "").strip()
+            author_line = f" от {author}" if author else ""
+            message = (
+                f"💬 Ответ по заявке #{notification['external_id']}{author_line}:\n"
+                f"{notification['body']}"
+            )
+            await max_client.send_message(
+                notification["max_user_id"],
+                message,
+                user_id=notification["max_user_id"],
+            )
+            await backend.mark_reply_notification_sent(notification["id"])
+        except Exception:
+            logging.exception("Не удалось отправить ответ оператора пользователю: %s", notification)
+
+
 async def notifications_loop(
     max_client: MaxBotClient,
     backend: BackendClient,
@@ -1216,9 +1256,10 @@ async def notifications_loop(
     while not stop_event.is_set():
         try:
             await process_status_notifications(max_client, backend)
+            await process_reply_notifications(max_client, backend)
             touch_heartbeat()
         except Exception:
-            logging.exception("Не удалось обработать уведомления о смене статусов")
+            logging.exception("Не удалось обработать уведомления (статусы/ответы)")
             touch_heartbeat()
 
         try:

@@ -128,6 +128,7 @@ class Ticket(Base, TimestampMixin):
 
     user: Mapped["User"] = relationship(back_populates="tickets")
     notifications: Mapped[list["TicketStatusNotification"]] = relationship(back_populates="ticket")
+    reply_notifications: Mapped[list["TicketReplyNotification"]] = relationship(back_populates="ticket")
 
 
 class UserTicketViewPermission(Base, TimestampMixin):
@@ -183,3 +184,24 @@ class TicketStatusNotification(Base, TimestampMixin):
     notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     ticket: Mapped["Ticket"] = relationship(back_populates="notifications")
+
+
+class TicketReplyNotification(Base, TimestampMixin):
+    """Ответ оператора из osTicket, который нужно доставить пользователю в MAX.
+
+    signature уникальна в пределах заявки и вычисляется по содержимому записи ветки,
+    чтобы один и тот же ответ не отправлялся повторно при каждом опросе.
+    """
+
+    __tablename__ = "ticket_reply_notifications"
+    __table_args__ = (UniqueConstraint("ticket_id", "signature", name="uq_ticket_reply_signature"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
+    signature: Mapped[str] = mapped_column(String(64), index=True)
+    author: Mapped[str] = mapped_column(String(255), default="")
+    body: Mapped[str] = mapped_column(Text)
+    entry_created_at: Mapped[str] = mapped_column(String(64), default="")
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    ticket: Mapped["Ticket"] = relationship(back_populates="reply_notifications")

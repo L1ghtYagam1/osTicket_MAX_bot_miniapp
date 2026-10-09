@@ -43,6 +43,7 @@ from .schemas import (
     TicketCreateRequest,
     TicketDetailsOut,
     TicketStatusNotificationOut,
+    TicketReplyNotificationOut,
     TicketOut,
     TicketStatusOut,
     TopicCreateRequest,
@@ -77,13 +78,16 @@ from .services import (
     list_audit_logs,
     list_ticket_access_items,
     list_pending_status_notifications,
+    list_pending_reply_notifications,
     log_admin_action,
     mark_notification_sent,
+    mark_reply_notification_sent,
     osticket_client,
     request_email_code,
     require_active_user,
     require_admin_user,
     sync_ticket_statuses,
+    sync_ticket_replies,
     update_integration_settings,
     update_ticket_access_items,
     update_user,
@@ -133,6 +137,14 @@ async def status_sync_loop(stop_event: asyncio.Event) -> None:
                 logger.info("Синхронизация статусов: новых уведомлений %s", len(notifications))
         except Exception:
             logger.exception("Фоновая синхронизация статусов завершилась ошибкой")
+
+        try:
+            with SessionLocal() as db:
+                replies = await sync_ticket_replies(db)
+            if replies:
+                logger.info("Синхронизация ответов оператора: новых %s", len(replies))
+        except Exception:
+            logger.exception("Фоновая синхронизация ответов оператора завершилась ошибкой")
 
 
 @asynccontextmanager
@@ -841,3 +853,35 @@ def mark_ticket_status_notification_sent(notification_id: int, db: Session = Dep
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return MessageOut(message="Notification marked as sent")
+
+
+@app.post("/api/v1/internal/ticket-reply-sync", response_model=list[TicketReplyNotificationOut], dependencies=[Depends(require_internal_token)])
+async def internal_ticket_reply_sync(db: Session = Depends(get_db)) -> list[TicketReplyNotificationOut]:
+    # Фоновый цикл уже наполняет очередь; синхронный обход — запасной вариант.
+    if settings.ticket_status_poll_interval_seconds <= 0:
+        await sync_ticket_replies(db)
+    result: list[TicketReplyNotificationOut] = []
+    for item in list_pending_reply_notifications(db):
+        ticket = item.ticket
+        result.append(
+            TicketReplyNotificationOut(
+                id=item.id,
+                ticket_id=item.ticket_id,
+                max_user_id=ticket.user.max_user_id,
+                external_id=ticket.external_id,
+                subject=ticket.subject,
+                author=item.author,
+                body=item.body,
+                created_at=item.created_at,
+            )
+        )
+    return result
+
+
+@app.post("/api/v1/internal/ticket-reply-notifications/{notification_id}/sent", response_model=MessageOut, dependencies=[Depends(require_internal_token)])
+def mark_ticket_reply_notification_sent(notification_id: int, db: Session = Depends(get_db)) -> MessageOut:
+    try:
+        mark_reply_notification_sent(db, notification_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return MessageOut(message="Reply notification marked as sent")

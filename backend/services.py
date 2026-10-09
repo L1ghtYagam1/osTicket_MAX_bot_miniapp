@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import binascii
+import hashlib
 import logging
 import re
 import json
@@ -26,6 +27,7 @@ from .models import (
     Hotel,
     IntegrationSettings,
     Ticket,
+    TicketReplyNotification,
     TicketStatusNotification,
     Topic,
     User,
@@ -963,6 +965,121 @@ def list_pending_status_notifications(db: Session) -> list[TicketStatusNotificat
 
 def mark_notification_sent(db: Session, notification_id: int) -> None:
     notification = db.get(TicketStatusNotification, notification_id)
+    if notification is None:
+        raise ValueError("Уведомление не найдено")
+    notification.notified_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def _reply_signature(author: str, created_at: str, body: str) -> str:
+    raw = "\x1f".join((author or "", created_at or "", body or ""))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:64]
+
+
+def _is_staff_reply(entry: dict) -> bool:
+    """Ответ оператора — тип 'R' (response). 'M' — сообщение клиента, 'N' — заметка."""
+    etype = str(entry.get("entry_type") or "").strip().upper()
+    return etype.startswith("R")
+
+
+async def _fetch_thread(ticket: Ticket, semaphore: asyncio.Semaphore) -> tuple[Ticket, list[dict]]:
+    async with semaphore:
+        try:
+            details = await osticket_client.get_extended_ticket_details(ticket.external_id)
+        except Exception as exc:
+            logger.warning("Не удалось прочитать ветку заявки %s из osTicket: %s", ticket.external_id, exc)
+            return ticket, []
+    try:
+        return ticket, extract_extended_thread_entries(details)
+    except Exception:
+        logger.exception("Не удалось разобрать ветку заявки %s", ticket.external_id)
+        return ticket, []
+
+
+async def sync_ticket_replies(db: Session) -> list[TicketReplyNotification]:
+    """Находит новые ответы оператора в osTicket и ставит их в очередь на отправку в MAX.
+
+    Чтобы при первом сканировании заявки не высыпать пользователю всю старую
+    переписку, уже существующие ответы помечаются как отправленные (seed), а
+    реально доставляются только новые, появившиеся после начала отслеживания.
+    """
+    if not is_extended_api_enabled(db):
+        return []
+
+    candidates = [
+        ticket
+        for ticket in db.scalars(
+            select(Ticket).options(selectinload(Ticket.user)).order_by(Ticket.created_at.desc())
+        ).all()
+        if not is_terminal_status(ticket.status)
+    ]
+    if not candidates:
+        return []
+
+    semaphore = asyncio.Semaphore(max(1, settings.ticket_status_fetch_concurrency))
+    results = await asyncio.gather(*(_fetch_thread(ticket, semaphore) for ticket in candidates))
+
+    created: list[TicketReplyNotification] = []
+    now = datetime.now(timezone.utc)
+    for ticket, entries in results:
+        seen_before = db.scalar(
+            select(TicketReplyNotification.id).where(TicketReplyNotification.ticket_id == ticket.id).limit(1)
+        )
+        first_scan = seen_before is None
+        for entry in entries:
+            if not _is_staff_reply(entry):
+                continue
+            body = (entry.get("body") or "").strip()
+            if not body:
+                continue
+            author = (entry.get("author") or "").strip()
+            created_at = (entry.get("created_at") or "").strip()
+            signature = _reply_signature(author, created_at, body)
+            exists = db.scalar(
+                select(TicketReplyNotification.id)
+                .where(TicketReplyNotification.ticket_id == ticket.id)
+                .where(TicketReplyNotification.signature == signature)
+            )
+            if exists:
+                continue
+            notification = TicketReplyNotification(
+                ticket_id=ticket.id,
+                signature=signature,
+                author=author[:255],
+                body=body,
+                entry_created_at=created_at[:64],
+                # Старые ответы при первом сканировании помечаем отправленными.
+                notified_at=now if first_scan else None,
+            )
+            db.add(notification)
+            if not first_scan:
+                created.append(notification)
+
+    try:
+        db.commit()
+    except Exception:
+        logger.exception("Не удалось сохранить ответы оператора")
+        db.rollback()
+        return []
+
+    for notification in created:
+        db.refresh(notification)
+    return created
+
+
+def list_pending_reply_notifications(db: Session) -> list[TicketReplyNotification]:
+    return list(
+        db.scalars(
+            select(TicketReplyNotification)
+            .options(selectinload(TicketReplyNotification.ticket).selectinload(Ticket.user))
+            .where(TicketReplyNotification.notified_at.is_(None))
+            .order_by(TicketReplyNotification.created_at.asc())
+        ).all()
+    )
+
+
+def mark_reply_notification_sent(db: Session, notification_id: int) -> None:
+    notification = db.get(TicketReplyNotification, notification_id)
     if notification is None:
         raise ValueError("Уведомление не найдено")
     notification.notified_at = datetime.now(timezone.utc)

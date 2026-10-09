@@ -177,6 +177,17 @@ class TicketStatusNotificationOut(BaseModel):
     created_at: datetime
 
 
+class TicketReplyNotificationOut(BaseModel):
+    id: int
+    ticket_id: int
+    max_user_id: str
+    external_id: str
+    subject: str
+    author: str
+    body: str
+    created_at: datetime
+
+
 class TopicOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
