@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     osticket_api_url: str = ""
     osticket_api_key: str = ""
     osticket_request_timeout: int = 90
+    # Уведомления osTicket при создании заявки ТОЛЬКО для заявок из бота/mini-app.
+    # Синхронная рассылка этих писем тормозит создание (~6 c vs ~0.6 c без них),
+    # поэтому по умолчанию выключены: пользователь получает подтверждение и статусы
+    # в MAX. Верните True, если нужны email (например, алерт сотрудникам на почту).
+    osticket_ticket_alert: bool = False
+    osticket_ticket_autorespond: bool = False
     osticket_status_api_url: str = ""
     osticket_extended_api_url: str = ""
     osticket_extended_api_staff_id: int = 1

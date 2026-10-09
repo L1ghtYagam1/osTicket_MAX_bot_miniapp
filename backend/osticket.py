@@ -411,9 +411,13 @@ class OsTicketClient:
             attached_names = ", ".join(item["name"] for item in attachments)
             message += f"\n\nПриложенные файлы: {attached_names}"
 
+        # alert/autorespond управляются настройками и действуют ТОЛЬКО на заявки,
+        # созданные через этот API (бот и mini-app). Синхронная отправка этих
+        # писем — основная причина медленного создания (~6 c vs ~0.6 c без писем).
+        # Заявки из других каналов osTicket (почта, веб-форма) этим не затронуты.
         payload = {
-            "alert": True,
-            "autorespond": True,
+            "alert": settings.osticket_ticket_alert,
+            "autorespond": settings.osticket_ticket_autorespond,
             "source": "API",
             "name": full_name,
             "email": email,
