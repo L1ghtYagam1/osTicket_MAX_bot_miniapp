@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     # переиспользуем уже полученный статус, не дёргая helpdesk повторно.
     ticket_status_fetch_concurrency: int = 8
     ticket_status_cache_ttl_seconds: int = 30
+    # Сколько ещё сканировать ответы у закрытой/решённой заявки после последнего
+    # изменения — чтобы поймать ответ оператора, написанный при закрытии.
+    ticket_reply_terminal_grace_seconds: int = 7200
 
     # Вложения к заявкам (mini app и бот). Лимиты дублируются на клиенте.
     attachment_max_count: int = 5

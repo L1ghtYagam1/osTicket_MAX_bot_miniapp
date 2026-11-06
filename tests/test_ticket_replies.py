@@ -87,6 +87,40 @@ async def test_client_and_note_entries_ignored(user_factory, catalog, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_closing_reply_captured_on_terminal_ticket(user_factory, catalog, monkeypatch):
+    """Ответ оператора, написанный при закрытии, доходит, хотя заявка уже терминальная."""
+    from datetime import datetime, timezone
+
+    user = user_factory(max_user_id="103", email="u103@example.com")
+    with SessionLocal() as db:
+        _make_ticket(db, user, catalog)
+
+    monkeypatch.setattr(services, "is_extended_api_enabled", lambda db: True)
+
+    # Открытая заявка с одним старым ответом — сид.
+    monkeypatch.setattr(services.osticket_client, "get_extended_ticket_details",
+                        _thread([{"type": "R", "body": "В работе", "poster": "Оператор", "created": "1"}]))
+    with SessionLocal() as db:
+        await services.sync_ticket_replies(db)
+
+    # Закрываем заявку и добавляем финальный ответ (updated_at только что).
+    with SessionLocal() as db:
+        t = db.scalars(__import__("sqlalchemy").select(models.Ticket)).first()
+        t.status = "closed"
+        t.updated_at = datetime.now(timezone.utc)
+        db.commit()
+    monkeypatch.setattr(services.osticket_client, "get_extended_ticket_details",
+                        _thread([
+                            {"type": "R", "body": "В работе", "poster": "Оператор", "created": "1"},
+                            {"type": "R", "body": "Готово, закрываю заявку", "poster": "Оператор", "created": "2"},
+                        ]))
+    with SessionLocal() as db:
+        created = await services.sync_ticket_replies(db)
+    assert len(created) == 1
+    assert created[0].body == "Готово, закрываю заявку"
+
+
+@pytest.mark.asyncio
 async def test_disabled_when_extended_api_off(user_factory, catalog, monkeypatch):
     user_factory(max_user_id="102", email="u102@example.com")
     monkeypatch.setattr(services, "is_extended_api_enabled", lambda db: False)

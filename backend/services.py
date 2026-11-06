@@ -1006,13 +1006,20 @@ async def sync_ticket_replies(db: Session) -> list[TicketReplyNotification]:
     if not is_extended_api_enabled(db):
         return []
 
-    candidates = [
-        ticket
-        for ticket in db.scalars(
-            select(Ticket).options(selectinload(Ticket.user)).order_by(Ticket.created_at.desc())
-        ).all()
-        if not is_terminal_status(ticket.status)
-    ]
+    # Сканируем незакрытые заявки, а также недавно закрытые/решённые: оператор
+    # часто пишет ответ одновременно с закрытием, а статус делает заявку
+    # терминальной — без этого окна финальный ответ при закрытии терялся.
+    grace_start = datetime.now(timezone.utc) - timedelta(seconds=settings.ticket_reply_terminal_grace_seconds)
+    candidates = []
+    for ticket in db.scalars(
+        select(Ticket).options(selectinload(Ticket.user)).order_by(Ticket.created_at.desc())
+    ).all():
+        if not is_terminal_status(ticket.status):
+            candidates.append(ticket)
+            continue
+        updated = _as_utc(ticket.updated_at)
+        if updated is not None and updated >= grace_start:
+            candidates.append(ticket)
     if not candidates:
         return []
 
